@@ -1,3 +1,21 @@
+Metadata-Version: 2.4
+Name: bills_analysis
+Version: 0.1.0
+Summary: Local backend CLI for invoice OCR and extraction PoC
+Requires-Python: <3.12,>=3.10
+Description-Content-Type: text/markdown
+Requires-Dist: typer>=0.12
+Requires-Dist: pydantic>=2.6
+Requires-Dist: rich>=13.7
+Requires-Dist: pymupdf>=1.23
+Requires-Dist: pillow>=10.2
+Requires-Dist: numpy<2.0.0
+Provides-Extra: dev
+Requires-Dist: pytest>=7.4; extra == "dev"
+Provides-Extra: ocr
+Requires-Dist: paddleocr>=2.7; extra == "ocr"
+Requires-Dist: paddlepaddle>=2.5.0; extra == "ocr"
+
 # bills_analysis
 
 Local backend CLI skeleton for the invoice OCR/extraction PoC.

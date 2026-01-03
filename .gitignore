@@ -1,0 +1,24 @@
+# Bytecode and caches
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Virtual environments
+.venv/
+env/
+venv/
+
+# Editor/OS
+.DS_Store
+Thumbs.db
+
+# Tooling
+.mypy_cache/
+.ruff_cache/
+
+# Outputs and runs
+outputs/
+outputs/*
+
+# Local data (keep samples out of VCS unless intentional)
+data/samples/*

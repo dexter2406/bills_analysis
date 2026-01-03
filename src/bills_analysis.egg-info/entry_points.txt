@@ -1,0 +1,2 @@
+[console_scripts]
+invoice = bills_analysis.cli:app
