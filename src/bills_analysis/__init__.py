@@ -1,4 +1,4 @@
-"""Core package for the invoice OCR and extraction CLI."""
+"""Core package for the invoice VLM extraction CLI."""
 
 __all__ = ["__version__"]
 

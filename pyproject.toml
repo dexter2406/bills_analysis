@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "bills_analysis"
 version = "0.1.0"
-description = "Local backend CLI for invoice OCR and extraction PoC"
+description = "Local backend CLI for invoice VLM extraction PoC (Ollama vision-first)."
 readme = "README.md"
 requires-python = ">=3.10,<3.12"
 dependencies = [
@@ -15,15 +15,12 @@ dependencies = [
     "pymupdf>=1.23",
     "pillow>=10.2",
     "numpy<2.0.0",
+    "requests>=2.31",
 ]
 
 [project.optional-dependencies]
 dev = [
     "pytest>=7.4",
-]
-ocr = [
-    "paddleocr>=2.7",
-    "paddlepaddle>=2.5.0",
 ]
 
 [project.scripts]

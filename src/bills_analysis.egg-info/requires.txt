@@ -4,10 +4,7 @@ rich>=13.7
 pymupdf>=1.23
 pillow>=10.2
 numpy<2.0.0
+requests>=2.31
 
 [dev]
 pytest>=7.4
-
-[ocr]
-paddleocr>=2.7
-paddlepaddle>=2.5.0

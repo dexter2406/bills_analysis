@@ -7,12 +7,12 @@ from typing import Iterable, List, Set
 import typer
 from rich.console import Console
 
-from .contracts import ExtractionResult, WarningItem
+from .contracts import ExtractionResult, FieldCandidate, WarningItem
 from .preprocess import detect_pdf_has_text_layer, preprocess_pages
 from .render import render_pdf_to_images
-from .text_extraction import extract_text_layer_tokens, ocr_tokens_paddle, save_tokens
+from .vlm import DEFAULT_PROMPT, infer_invoice_with_ollama
 
-app = typer.Typer(help="Invoice OCR/extraction CLI (skeleton).")
+app = typer.Typer(help="Invoice VLM extraction CLI (skeleton).")
 console = Console()
 
 
@@ -89,12 +89,20 @@ def extract(
     force_preprocess: bool = typer.Option(
         False, help="Preprocess even if a text layer is detected."
     ),
+    model: str = typer.Option("qwen3-vl:4b", help="Ollama model to query."),
+    base_url: str = typer.Option("http://localhost:11434", help="Ollama base URL."),
+    temperature: float = typer.Option(0.0, help="Sampling temperature for the VLM."),
+    prompt: str = typer.Option(
+        DEFAULT_PROMPT,
+        help="Prompt sent to the VLM. Keep concise; must instruct JSON output.",
+        rich_help_panel="Advanced",
+    ),
     debug: bool = False,
 ) -> None:
     """
     Run the single-file extraction pipeline (skeleton stub).
 
-    The real pipeline will render, preprocess, OCR, extract fields, and emit artifacts
+    The real pipeline will render, preprocess, query a VLM, extract fields, and emit artifacts
     into `out`. This stub only creates the output folder and a placeholder JSON.
     """
 
@@ -107,30 +115,23 @@ def extract(
         enable=preprocess and (force_preprocess or not has_text_layer),
     )
 
-    # OCR-first; if quality looks bad and text-layer exists, fallback to text-layer tokens.
-    image_paths = [Path(p.preprocessed_path or p.source_path) for p in pages if p.source_path]
-    page_numbers = [p.page_no for p in pages if p.source_path]
-    tokens, ocr_meta = ocr_tokens_paddle(image_paths, page_numbers, pages)
-    tokens_strategy = "ocr"
-    fallback_used = False
+    fields, vlm_meta = infer_invoice_with_ollama(
+        pages,
+        prompt=prompt,
+        model=model,
+        base_url=base_url,
+        temperature=temperature,
+    )
+
     warning_items: list[WarningItem] = []
-    if has_text_layer and (
-        ocr_meta.get("ocr_anomalous") == "true" or ocr_meta.get("ocr_error")
-    ):
-        text_tokens = extract_text_layer_tokens(pdf_path)
-        if text_tokens.tokens:
-            tokens = text_tokens
-            tokens_strategy = "text-layer"
-            fallback_used = True
-    elif not has_text_layer and (ocr_meta.get("ocr_error") or not tokens.tokens):
+    if vlm_meta.get("vlm_error"):
         warning_items.append(
             WarningItem(
-                code="OCR_UNAVAILABLE",
-                message="OCR failed or unavailable and no text layer present; tokens missing.",
+                code="VLM_ERROR",
+                message=f"Vision model call failed: {vlm_meta['vlm_error']}",
                 severity="error",
             )
         )
-    tokens_path = save_tokens(tokens, out / "tokens.json")
 
     placeholder = _write_placeholder(
         out,
@@ -143,15 +144,18 @@ def extract(
             "has_text_layer": str(has_text_layer),
             "preprocess_enabled": str(preprocess and (force_preprocess or not has_text_layer)),
             "force_preprocess": str(force_preprocess),
-            "tokens_strategy": tokens_strategy,
-            "tokens_path": str(tokens_path) if tokens_path else "",
-            "ocr_fallback_used": str(fallback_used),
-            "ocr_lang": ocr_meta.get("ocr_lang", ""),
-            "ocr_fallback_lang": ocr_meta.get("ocr_fallback_lang", ""),
-            "ocr_error": ocr_meta.get("ocr_error", ""),
+            "vlm_model": vlm_meta.get("vlm_model", ""),
+            "vlm_base_url": vlm_meta.get("vlm_base_url", ""),
+            "vlm_error": vlm_meta.get("vlm_error", ""),
         },
         warnings=warning_items,
     )
+    if fields:
+        placeholder_data = ExtractionResult.model_validate_json(
+            placeholder.read_text(encoding="utf-8")
+        )
+        placeholder_data.fields = fields
+        placeholder.write_text(placeholder_data.model_dump_json(indent=2), encoding="utf-8")
     console.print(f"[green]Wrote placeholder[/green] {placeholder}")
 
 
@@ -166,6 +170,14 @@ def batch(
     preprocess: bool = typer.Option(True, help="Run preprocessing on rendered pages."),
     force_preprocess: bool = typer.Option(
         False, help="Preprocess even if a text layer is detected."
+    ),
+    model: str = typer.Option("qwen3-vl:4b", help="Ollama model to query."),
+    base_url: str = typer.Option("http://localhost:11434", help="Ollama base URL."),
+    temperature: float = typer.Option(0.0, help="Sampling temperature for the VLM."),
+    prompt: str = typer.Option(
+        DEFAULT_PROMPT,
+        help="Prompt sent to the VLM. Keep concise; must instruct JSON output.",
+        rich_help_panel="Advanced",
     ),
     debug: bool = False,
 ) -> None:
@@ -191,29 +203,23 @@ def batch(
             enable=preprocess and (force_preprocess or not has_text_layer),
         )
 
-        image_paths = [Path(p.preprocessed_path or p.source_path) for p in pages if p.source_path]
-        page_numbers = [p.page_no for p in pages if p.source_path]
-        tokens, ocr_meta = ocr_tokens_paddle(image_paths, page_numbers, pages)
-        tokens_strategy = "ocr"
-        fallback_used = False
+        fields, vlm_meta = infer_invoice_with_ollama(
+            pages,
+            prompt=prompt,
+            model=model,
+            base_url=base_url,
+            temperature=temperature,
+        )
+
         warning_items: list[WarningItem] = []
-        if has_text_layer and (
-            ocr_meta.get("ocr_anomalous") == "true" or ocr_meta.get("ocr_error")
-        ):
-            text_tokens = extract_text_layer_tokens(pdf)
-            if text_tokens.tokens:
-                tokens = text_tokens
-                tokens_strategy = "text-layer"
-                fallback_used = True
-        elif not has_text_layer and (ocr_meta.get("ocr_error") or not tokens.tokens):
+        if vlm_meta.get("vlm_error"):
             warning_items.append(
                 WarningItem(
-                    code="OCR_UNAVAILABLE",
-                    message="OCR failed or unavailable and no text layer present; tokens missing.",
+                    code="VLM_ERROR",
+                    message=f"Vision model call failed: {vlm_meta['vlm_error']}",
                     severity="error",
                 )
             )
-        tokens_path = save_tokens(tokens, run_dir / "tokens.json")
 
         placeholder = _write_placeholder(
             run_dir,
@@ -226,15 +232,18 @@ def batch(
                 "has_text_layer": str(has_text_layer),
                 "preprocess_enabled": str(preprocess and (force_preprocess or not has_text_layer)),
                 "force_preprocess": str(force_preprocess),
-                "tokens_strategy": tokens_strategy,
-                "tokens_path": str(tokens_path) if tokens_path else "",
-                "ocr_fallback_used": str(fallback_used),
-                "ocr_lang": ocr_meta.get("ocr_lang", ""),
-                "ocr_fallback_lang": ocr_meta.get("ocr_fallback_lang", ""),
-                "ocr_error": ocr_meta.get("ocr_error", ""),
+                "vlm_model": vlm_meta.get("vlm_model", ""),
+                "vlm_base_url": vlm_meta.get("vlm_base_url", ""),
+                "vlm_error": vlm_meta.get("vlm_error", ""),
             },
             warnings=warning_items,
         )
+        if fields:
+            placeholder_data = ExtractionResult.model_validate_json(
+                placeholder.read_text(encoding="utf-8")
+            )
+            placeholder_data.fields = fields
+            placeholder.write_text(placeholder_data.model_dump_json(indent=2), encoding="utf-8")
         console.print(f"[green]Prepared[/green] {placeholder}")
 
 

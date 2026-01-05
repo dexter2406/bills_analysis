@@ -1,22 +1,17 @@
 # bills_analysis
 
-Local backend CLI skeleton for the invoice OCR/extraction PoC.
+Local backend CLI skeleton for the invoice VLM extraction PoC.
 
 ## Run style
 - Preferred: `uv run invoice --help` (uses `pyproject.toml` deps).
 - Alt: `python cli/main.py --help` for editable runs without install.
 
 ### Python version
-- Project targets Python 3.10–3.11 (PaddlePaddle wheels are not available for 3.12/3.13). Create a 3.11 env for OCR work (`uv venv --python 3.11` or `uv run --python 3.11 ...`).
+- Project targets Python 3.10–3.11.
 
 ## Dependencies
 - PyMuPDF for PDF rendering; Pillow for preprocessing.
-- OCR is optional and gated behind extras (PaddleOCR is heavier):
-  - Base OCR extra (current env only): `uv sync --current --extra ocr`
-  - PaddlePaddle is not bundled; on Windows (Python <3.12), install it manually from the Paddle index:  
-    `uv add --current paddlepaddle==2.5.2 --index-url https://www.paddlepaddle.org.cn/whl/windows/mkl/avx/stable.html`  
-    then `uv sync --current --extra ocr` (PaddleOCR from PyPI)
-  - If you cannot install PaddleOCR/PaddlePaddle, text-layer fallback still works for digitized PDFs but scanning OCR will be unavailable.
+- VLM (Ollama) for extraction: defaults to `qwen3-vl:4b` at `http://localhost:11434`.
 
 ## Layout
 - `src/bills_analysis/`: core package and `contracts.py` for `extraction.json`.
@@ -26,10 +21,10 @@ Local backend CLI skeleton for the invoice OCR/extraction PoC.
 - `outputs/`: runtime artifacts; see `outputs/extraction.example.json` for the contract.
 
 ## Usage examples
-- Single file stub (renders pages to PNG, OCR-first with text-layer fallback, writes placeholder `extraction.json` + `tokens.json`): `uv run invoice extract data/samples/demo.pdf --out outputs/run1 --dpi 200`
+- Single file stub (renders pages to PNG, queries Ollama VLM, writes placeholder `extraction.json`): `uv run invoice extract data/samples/demo.pdf --out outputs/run1 --dpi 200`
 - Force preprocessing even for text-layer PDFs: add `--force-preprocess`.
 - Batch stub (multiple inputs accepted): `uv run invoice batch data/samples/digitized data/samples/scan/*.pdf --out outputs/runs --dpi 200`
 
 ## Next steps (per PoC)
-- Fill the pipeline (render → preprocess → OCR → extract → evidence) inside `src/bills_analysis/`.
+- Fill the pipeline (render → preprocess → VLM → extract → evidence) inside `src/bills_analysis/`.
 - Add golden sample PDFs and expected outputs under `data/samples/` and `tests/`.
