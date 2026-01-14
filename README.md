@@ -1,6 +1,6 @@
 # bills_analysis
 
-Local backend CLI skeleton for the invoice VLM extraction PoC.
+Local backend CLI skeleton for the invoice Azure API extraction PoC.
 
 ## Run style
 - Preferred: `uv run invoice --help` (uses `pyproject.toml` deps).
@@ -11,7 +11,8 @@ Local backend CLI skeleton for the invoice VLM extraction PoC.
 
 ## Dependencies
 - PyMuPDF for PDF rendering; Pillow for preprocessing.
-- VLM (Ollama) for extraction: defaults to `qwen3-vl:4b` at `http://localhost:11434`.
+- Azure Document Intelligence for extraction (`azure-ai-documentintelligence`).
+- Configure `AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT` and `AZURE_DOCUMENT_INTELLIGENCE_KEY` in `.env`.
 
 ## Layout
 - `src/bills_analysis/`: core package and `contracts.py` for `extraction.json`.
@@ -21,10 +22,9 @@ Local backend CLI skeleton for the invoice VLM extraction PoC.
 - `outputs/`: runtime artifacts; see `outputs/extraction.example.json` for the contract.
 
 ## Usage examples
-- Single file stub (renders pages to PNG, queries Ollama VLM, writes placeholder `extraction.json`): `uv run invoice extract data/samples/demo.pdf --out outputs/run1 --dpi 200`
-- Force preprocessing even for text-layer PDFs: add `--force-preprocess`.
-- Batch stub (multiple inputs accepted): `uv run invoice batch data/samples/digitized data/samples/scan/*.pdf --out outputs/runs --dpi 200`
+- Azure API pipeline (PDFs can be multi-page):  
+  `uv run python tests/vlm_pipeline_api.py data/samples/digitized/demo.pdf --dest-dir=outputs/comp_pdf`
 
 ## Next steps (per PoC)
-- Fill the pipeline (render → preprocess → VLM → extract → evidence) inside `src/bills_analysis/`.
+- Fill the pipeline (render → preprocess → Azure API → extract → evidence) inside `src/bills_analysis/`.
 - Add golden sample PDFs and expected outputs under `data/samples/` and `tests/`.
