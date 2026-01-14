@@ -3,6 +3,7 @@ __pycache__/
 *.py[cod]
 .pytest_cache/
 .vscode/
+src/bills_analysis.egg-info/
 # Virtual environments
 .venv/
 env/
