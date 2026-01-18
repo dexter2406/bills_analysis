@@ -12,13 +12,17 @@ if str(SRC_DIR) not in sys.path:
 
 from bills_analysis.preprocess import compress_image_only_pdf, preprocess_image
 from bills_analysis.render import render_pdf_to_images
-from bills_analysis.vlm import DEFAULT_PROMPT, infer_invoice_with_ollama, prompts_dict
+from bills_analysis.vlm import DEFAULT_PROMPT, prompts_dict
 from bills_analysis.contracts import PageInfo
+from bills_analysis.extract_by_azure_api import analyze_document_with_azure
+
 
 crop_y_dict = {
     'beleg': (0, 0.8),
     'zbon': (0.3, 0.6),
 }
+THRESHOLD_RECEIPT_RATIO = 2.0
+THRESHOLD_CONFIDENCE = 0.8
 
 def get_img_ratio(page: PageInfo) -> float:
     if page.width <= 0:
@@ -72,18 +76,19 @@ def run_pipeline(
     *,
     output_root: Path,
     backup_dest_dir: Path,
-    dpi: int = 200,
+    dpi: int = 300,
     prompt: str = DEFAULT_PROMPT,
     model: str = "qwen3-vl:4b",
     purpose="beleg",
 ) -> None:
+
     for pdf in pdf_paths:
         pdf_path = Path(pdf)
         if not pdf_path.exists():
             print(f"未找到PDF: {pdf_path}")
             continue
-
-        max_side = 800
+        file_type = "invoice"
+        max_side = 1000
         print(f"\n=== 开始处理PDF: {pdf_path} ===")
         run_dir = output_root / pdf_path.stem
         pages = render_pdf_to_images(pdf_path, run_dir / "pages", dpi=dpi, skip_errors=False)
@@ -93,54 +98,27 @@ def run_pipeline(
             print(f"未渲染出页面，跳过: {pdf_path}")
             continue
 
-        gray_dir = run_dir / "gray"
-        # 对打印的长条小票进行裁剪
-        crop_y = None
-        if len(pages) == 1:
-            ratio = get_img_ratio(pages[0])
-            print(f"单页PDF，长宽比: {ratio:.2f}")
-            if ratio > 2:
-                crop_y = crop_y_dict.get(purpose)
-        
-        # 处理每一页
-        for page in pages[::-1]:  # Process pages in reverse order
-            if not page.source_path:
-                continue
-            src = Path(page.source_path)
-            gray_path = _to_grayscale(
-                src,
-                gray_dir / src.name,
-                max_side=max_side,
-                crop_y=crop_y,
-            )
-            print(f"灰度图已保存: {gray_path}")
-
-            page_for_vlm = PageInfo(
-                page_no=page.page_no,
-                width=page.width,
-                height=page.height,
-                dpi=page.dpi,
-                source_path=page.source_path,
-                preprocessed_path=str(gray_path),
-            )
-            print(f"调用VLM: {pdf_path.name} | page {page.page_no:02d}")
-            fields, meta = infer_invoice_with_ollama(
-                [page_for_vlm],
-                model=model,
-                purpose=purpose
-            )
-            if meta.get("vlm_error"):
-                print("VLM错误:", meta["vlm_error"])
-                continue
-            for field in fields:
-                print(f"{field.name}: {field.value}")
-                if field.name in extracted_kv:
-                    new_value = field.value
-                    if new_value and str(new_value).strip().lower() != "none":
-                        extracted_kv[field.name] = new_value
-            if all(value not in (None, "", "None") for value in extracted_kv.values()):
-                print("已提取所有字段，提前结束页循环。")
-                break
+        if len(pages) == 1 and get_img_ratio(pages[0]) > THRESHOLD_RECEIPT_RATIO:
+            file_type = "receipt"
+            crop_y = [0,0.6]
+        model_id = f"prebuilt-{file_type}"
+        print(f"调用Azure: {pdf_path.name} | model {model_id}")
+        azure_result = analyze_document_with_azure(str(pdf_path), model_id=model_id)
+        if azure_result:
+            value_map = {
+                "brutto": azure_result.get("brutto"),
+                "netto": azure_result.get("netto"),
+                "store_name": azure_result.get("store_name"),
+            }
+            for key, value in value_map.items():
+                if key in extracted_kv and value not in (None, "", "None"):
+                    extracted_kv[key] = str(value)
+            score_brutto = azure_result.get("confidence_brutto")
+            score_netto = azure_result.get("confidence_netto")
+            if "score_brutto" in extracted_kv and extracted_kv["score_brutto"] in (None, "", "None"):
+                extracted_kv["score_brutto"] = -1 if score_brutto is None else (1 if score_brutto >= THRESHOLD_CONFIDENCE else 0)
+            if "score_netto" in extracted_kv and extracted_kv["score_netto"] in (None, "", "None"):
+                extracted_kv["score_netto"] = -1 if score_netto is None else (1 if score_netto >= THRESHOLD_CONFIDENCE else 0)
         print(f"extracted_kv: {extracted_kv}")
         print("开始压缩备份PDF...")
         compressed_pdf = compress_image_only_pdf(
