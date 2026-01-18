@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import sys
 from pathlib import Path
 from datetime import datetime
@@ -76,11 +77,16 @@ def run_pipeline(
     *,
     output_root: Path,
     backup_dest_dir: Path,
+    results_path: Path | None = None,
     dpi: int = 300,
     prompt: str = DEFAULT_PROMPT,
     model: str = "qwen3-vl:4b",
     purpose="beleg",
 ) -> None:
+    if results_path is None:
+        results_path = output_root / "extracted_results.json"
+
+    results: list[dict[str, object]] = []
 
     for pdf in pdf_paths:
         pdf_path = Path(pdf)
@@ -93,9 +99,11 @@ def run_pipeline(
         run_dir = output_root / pdf_path.stem
         pages = render_pdf_to_images(pdf_path, run_dir / "pages", dpi=dpi, skip_errors=False)
         extracted_kv = {llm_field: None for llm_field in prompts_dict[purpose]['fields']} # Brutto, Netto, etc.
+        result_entry = {"filename": pdf_path.name, "result": extracted_kv}
         print(extracted_kv)
         if not pages:
             print(f"未渲染出页面，跳过: {pdf_path}")
+            results.append(result_entry)
             continue
 
         if len(pages) == 1 and get_img_ratio(pages[0]) > THRESHOLD_RECEIPT_RATIO:
@@ -115,10 +123,10 @@ def run_pipeline(
                     extracted_kv[key] = str(value)
             score_brutto = azure_result.get("confidence_brutto")
             score_netto = azure_result.get("confidence_netto")
-            if "score_brutto" in extracted_kv and extracted_kv["score_brutto"] in (None, "", "None"):
-                extracted_kv["score_brutto"] = -1 if score_brutto is None else (1 if score_brutto >= THRESHOLD_CONFIDENCE else 0)
-            if "score_netto" in extracted_kv and extracted_kv["score_netto"] in (None, "", "None"):
-                extracted_kv["score_netto"] = -1 if score_netto is None else (1 if score_netto >= THRESHOLD_CONFIDENCE else 0)
+            if extracted_kv.get('score_brutto') is None:
+                extracted_kv['score_brutto'] = score_brutto if score_brutto not in ("", "None") else None
+            if extracted_kv.get('score_netto') is None: 
+                extracted_kv['score_netto'] = score_netto if score_netto not in ("", "None") else None
         print(f"extracted_kv: {extracted_kv}")
         print("开始压缩备份PDF...")
         compressed_pdf = compress_image_only_pdf(
@@ -136,24 +144,52 @@ def run_pipeline(
                 compressed_pdf.rename(target)
                 print(f"备份文件已重命名: {target.name}")
         print(f"=== 完成处理PDF: {pdf_path} ===\n")
+        results.append(result_entry)
+
+    results_path.parent.mkdir(parents=True, exist_ok=True)
+    results_path.write_text(json.dumps(results, ensure_ascii=False, indent=2), encoding="utf-8")
+    print(f"检测结果已保存: {results_path}")
 
 
 
 
 if __name__ == "__main__":
     backup_dest_dir = ROOT_DIR / "outputs" / "test_comp_pdf"
+    input_dir: Path | None = None
+    results_path: Path | None = None
     inputs = []
     for arg in sys.argv[1:]:
         if arg.startswith("--dest-dir="):
             backup_dest_dir = Path(arg.split("=", 1)[1].strip('"'))
+        elif arg.startswith("--input-dir="):
+            input_dir = Path(arg.split("=", 1)[1].strip('"'))
+        elif arg.startswith("--output-json="):
+            results_path = Path(arg.split("=", 1)[1].strip('"'))
         else:
             inputs.append(arg)
+    if input_dir is not None:
+        if not input_dir.exists():
+            print(f"目录不存在: {input_dir}")
+            raise SystemExit(1)
+        if not input_dir.is_dir():
+            print(f"不是目录: {input_dir}")
+            raise SystemExit(1)
+        dir_pdfs = sorted(
+            (p for p in input_dir.iterdir() if p.is_file() and p.suffix.lower() == ".pdf"),
+            key=lambda p: p.name,
+        )
+        inputs.extend(str(p) for p in dir_pdfs)
+    print(inputs)
     if not inputs:
-        print("用法: python tests/vlm_pipeline.py <pdf1> [pdf2 ...] [--dest-dir=PATH]")
+        print(
+            "用法: python tests/vlm_pipeline_api.py <pdf1> [pdf2 ...] "
+            "[--input-dir=PATH] [--dest-dir=PATH] [--output-json=PATH]"
+        )
         raise SystemExit(1)
     run_pipeline(
         inputs,
         output_root=ROOT_DIR / "outputs" / "vlm_pipeline",
         backup_dest_dir=backup_dest_dir,
+        results_path=results_path,
         dpi=150,
     )
