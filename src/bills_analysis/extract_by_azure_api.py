@@ -79,44 +79,25 @@ def analyze_document_with_azure(image_path: str, model_id: str = "prebuilt-invoi
             extracted_data["netto"] = f_subtotal.value_currency.amount if f_subtotal.value_currency else f_subtotal.value_number
             extracted_data["confidence_netto"] = f_subtotal.confidence
             print(f"[Azure] subtotal={extracted_data['netto']} conf={extracted_data['confidence_netto']}")
-        elif extracted_data["brutto"] is not None:
-            print("[Azure] Subtotal missing, try Tax/TaxRate fallback")
-            # f_tax = fields.get("TaxDetails").value_array[0].value_object['Rate'].content
-            if f_tax:
-                print(f"[Azure] Tax field raw: {f_tax}")
-                tax_value = f_tax.value_currency.amount if f_tax.value_currency else f_tax.value_number
-                print(f"[Azure] Tax value: {tax_value}")
-                if tax_value is not None:
-                    extracted_data["netto"] = round(extracted_data["brutto"] - tax_value, 2)
+
+        # 4. 用 TotalTax 兜底推断 brutto 或 netto（避免使用 TaxRate）
+        if extracted_data["brutto"] is None or extracted_data["netto"] is None:
+            f_total_tax = fields.get("TotalTax")
+            total_tax = None
+            if f_total_tax:
+                total_tax = f_total_tax.value_currency.amount if f_total_tax.value_currency else f_total_tax.value_number
+            if total_tax is not None:
+                print(f"[Azure] TotalTax={total_tax} used for fallback")
+                if extracted_data["brutto"] is None and extracted_data["netto"] is not None:
+                    extracted_data["brutto"] = round(extracted_data["netto"] + total_tax, 2)
+                    extracted_data["confidence_brutto"] = -1
+                elif extracted_data["netto"] is None and extracted_data["brutto"] is not None:
+                    extracted_data["netto"] = round(extracted_data["brutto"] - total_tax, 2)
                     extracted_data["confidence_netto"] = -1
             else:
-                print("[Azure] Tax missing, try TaxRate")
-                f_tax_rate = fields.get("TaxRate")
-                if f_tax_rate:
-                    print(f"[Azure] Tax field raw: {f_tax_rate}")
-                    tax_rate_raw = f_tax_rate.value_string or f_tax_rate.content
-                    print(f"[Azure] TaxRate raw string: {tax_rate_raw}")
-                    rate = None
-                    if tax_rate_raw:
-                        cleaned = tax_rate_raw.strip().replace("%", "")
-                        try:
-                            tax_rate = float(cleaned)
-                            print("[Azure] Parsed tax rate:", tax_rate)
-                            rate = tax_rate / 100 if tax_rate > 1.5 else tax_rate
-                        except ValueError:
-                            rate = None
-                            print("[Azure] Failed to parse tax rate from string.")
-                    if rate and rate > 0:
-                        extracted_data["netto"] = round(
-                            extracted_data["brutto"] / (1 + rate), 2
-                        )
-                        extracted_data["confidence_netto"] = -1
-                else:
-                    print("[Azure] TaxRate missing; cannot infer netto")
-        elif extracted_data["brutto"] is None:
-            print("[Azure] Brutto missing; skip netto fallback")
+                print("[Azure] TotalTax missing; cannot infer brutto/netto")
 
-        # 4. Invoice ID (仅限 Invoice 模型)
+        # 5. Invoice ID (仅限 Invoice 模型)
         if model_id == "prebuilt-invoice":
             f_inv_id = fields.get("InvoiceId")
             extracted_data["invoice_id"] = f_inv_id.value_string if f_inv_id else None
