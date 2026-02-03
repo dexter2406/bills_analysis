@@ -6,6 +6,7 @@ import time
 from pathlib import Path
 from datetime import datetime
 from typing import Iterable
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import fitz  # PyMuPDF
 
@@ -118,14 +119,14 @@ def run_pipeline(
             encoding="utf-8",
         )
 
-    for idx, pdf in enumerate(pdf_paths):
+    def _process_one_pdf(idx: int, total: int, pdf: str) -> dict[str, object] | None:
         pdf_path = Path(pdf)
         if not pdf_path.exists():
             print(f"未找到PDF: {pdf_path}")
-            continue
+            return None
         file_type = "invoice"
         max_side = 1000
-        print(f"\n=== 开始处理PDF ({idx}/{len(pdf_paths)}: {pdf_path} ===")
+        print(f"\n=== 开始处理PDF ({idx}/{total}: {pdf_path} ===")
         pdf_read_failed = False
         try:
             with fitz.open(pdf_path) as doc:
@@ -153,9 +154,7 @@ def run_pipeline(
             extracted_kv["score_brutto"] = None
             extracted_kv["score_netto"] = None
             result_entry["proc_time"] = time.perf_counter() - start
-            results.append(result_entry)
-            _write_results()
-            continue
+            return result_entry
         # if not pages:
         #     print(f"未渲染出页面，跳过: {pdf_path}")
         #     result_entry["proc_time"] = time.perf_counter() - start
@@ -211,8 +210,25 @@ def run_pipeline(
                 print(f"备份文件已重命名: {target.name}")
         print(f"=== 完成处理PDF: {pdf_path} ===\n")
         result_entry["proc_time"] = time.perf_counter() - start
-        results.append(result_entry)
-        _write_results()
+        return result_entry
+
+    pdf_list = list(pdf_paths)
+    total = len(pdf_list)
+    if total == 0:
+        print(f"检测结果已保存: {results_path}")
+        return
+
+    with ThreadPoolExecutor(max_workers=4) as executor:
+        futures = [
+            executor.submit(_process_one_pdf, idx, total, pdf)
+            for idx, pdf in enumerate(pdf_list, start=1)
+        ]
+        for future in as_completed(futures):
+            entry = future.result()
+            if entry is None:
+                continue
+            results.append(entry)
+            _write_results()
 
     print(f"检测结果已保存: {results_path}")
 
