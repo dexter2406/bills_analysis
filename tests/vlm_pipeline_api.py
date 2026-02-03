@@ -71,8 +71,8 @@ def _to_grayscale(
 
 def get_compressed_pdf_name(purpose: str, extracted_kv: dict) -> str | None:
     if purpose == "beleg":
-        store_name = extracted_kv.get("Store_name") or ""
-        brutto = extracted_kv.get("Brutto") or ""
+        store_name = extracted_kv.get("store_name") or ""
+        brutto = extracted_kv.get("brutto") or ""
         brutto_norm = str(brutto).strip().replace(",", ".")
         int_part, frac_part = brutto_norm, "00"
         if "." in brutto_norm:
@@ -110,14 +110,24 @@ def run_pipeline(
     results_dir.mkdir(parents=True, exist_ok=True)
     results_path = results_dir / f"results_{timestamp}.json"
 
-    results: list[dict[str, object]] = []
-
-    def _write_results() -> None:
+    def _write_results(entry: dict[str, object]) -> None:
+        print(f"results_path: {results_path}")
         results_path.parent.mkdir(parents=True, exist_ok=True)
-        results_path.write_text(
-            json.dumps(results, ensure_ascii=False, indent=2),
-            encoding="utf-8",
-        )
+        if not results_path.exists():
+            with results_path.open("w", encoding="utf-8") as f:
+                json.dump([], f, ensure_ascii=False, indent=2)
+            print(f"[Results] Created: {results_path}")
+        raw = results_path.read_text(encoding="utf-8").strip()
+        if raw:
+            data = json.loads(raw)
+            if not isinstance(data, list):
+                raise ValueError("Results file is not a JSON list.")
+        else:
+            data = []
+        data.append(entry)
+        with results_path.open("w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+        print(f"[Results] Appended entry: {entry.get('filename')}")
 
     def _process_one_pdf(idx: int, total: int, pdf: str) -> dict[str, object] | None:
         pdf_path = Path(pdf)
@@ -140,10 +150,12 @@ def run_pipeline(
         start = time.perf_counter()
         run_dir = output_root / pdf_path.stem
         # pages = render_pdf_to_images(pdf_path, run_dir / "pages", dpi=dpi, skip_errors=False)
-        extracted_kv = {llm_field: None for llm_field in prompts_dict[purpose]['fields']} # Brutto, Netto, etc.
+        extracted_kv = {llm_field: None for llm_field in prompts_dict[purpose]['fields']} # brutto, netto, store_name, date
+        score_kv = {llm_field: None for llm_field in prompts_dict[purpose]['fields']}
         result_entry = {
             "filename": pdf_path.name,
             "result": extracted_kv,
+            "score": score_kv,
             "category": category,
         }
         print(extracted_kv)
@@ -151,8 +163,8 @@ def run_pipeline(
             print("[PDF] 读取失败，跳过后续处理。")
             extracted_kv["brutto"] = None
             extracted_kv["netto"] = None
-            extracted_kv["score_brutto"] = None
-            extracted_kv["score_netto"] = None
+            score_kv["brutto"] = None
+            score_kv["netto"] = None
             result_entry["proc_time"] = time.perf_counter() - start
             return result_entry
         # if not pages:
@@ -174,24 +186,24 @@ def run_pipeline(
             print(f"[Azure] 调用失败: {exc}")
             extracted_kv["brutto"] = None
             extracted_kv["netto"] = None
-            extracted_kv["score_brutto"] = None
-            extracted_kv["score_netto"] = None
+            score_kv["brutto"] = None
+            score_kv["netto"] = None
             azure_result = None
         if azure_result:
+            store_name = azure_result.get("store_name").split('\n')[0].split('.')[0]
             value_map = {
                 "brutto": azure_result.get("brutto"),
                 "netto": azure_result.get("netto"),
-                "store_name": azure_result.get("store_name"),
+                "store_name": store_name[0].upper() + store_name[1:],
+                "date": azure_result.get("date"),
             }
             for key, value in value_map.items():
                 if key in extracted_kv and value not in (None, "", "None"):
                     extracted_kv[key] = str(value)
-            score_brutto = azure_result.get("confidence_brutto")
-            score_netto = azure_result.get("confidence_netto")
-            if extracted_kv.get('score_brutto') is None:
-                extracted_kv['score_brutto'] = score_brutto if score_brutto not in ("", "None") else None
-            if extracted_kv.get('score_netto') is None: 
-                extracted_kv['score_netto'] = score_netto if score_netto not in ("", "None") else None
+            score_kv["brutto"] = azure_result.get("confidence_brutto")
+            score_kv["netto"] = azure_result.get("confidence_netto")
+            score_kv["store_name"] = azure_result.get("confidence_store_name")
+            score_kv["date"] = azure_result.get("confidence_date")
         print(f"extracted_kv: {extracted_kv}")
         print("开始压缩备份PDF...")
         compressed_pdf = compress_image_only_pdf(
@@ -227,8 +239,8 @@ def run_pipeline(
             entry = future.result()
             if entry is None:
                 continue
-            results.append(entry)
-            _write_results()
+            print(entry)
+            _write_results(entry)
 
     print(f"检测结果已保存: {results_path}")
 

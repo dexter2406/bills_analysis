@@ -13,120 +13,43 @@ import requests
 from .contracts import FieldCandidate, PageInfo
 
 
-prompt_beleg = """
+fields_beleg = ["brutto", "netto", "store_name", "date"]
+fields_zbon = ["brutto", "netto", "store_name", "date"]
+
+prompt_beleg = f"""
 You are an expert invoice and receipt parser.
 
-Your task:
-Analyze the given image and return ONLY a single valid JSON object.
-Do NOT include explanations, comments, or markdown.
-
---------------------------------------------------
-STEP 1 — Document Type Detection
---------------------------------------------------
-First, determine whether the document is:
-(A) a scanned retail receipt (photo / thermal paper / noisy layout), or
-(B) a structured electronic invoice (PDF-style layout, tables, aligned columns, e.g. Amazon).
-
-Adjust your extraction strategy accordingly.
-
---------------------------------------------------
-STEP 2 — Extraction Rules (apply to BOTH types)
---------------------------------------------------
-- Focus ONLY on totals and tax summary areas.
-- Ignore unit prices, per-item prices, quantities, SKUs, and line-item details.
-- Prefer amounts that appear near keywords such as:
-  "total", "gesamt", "gesamtpreis", "betrag", "zu zahlen", "amount due",
-  "netto", "zwischensumme", "subtotal", "ohne ust",
-  "mwst", "ust", "vat", "steuer".
-
---------------------------------------------------
-STEP 3 — Priority Rules
---------------------------------------------------
-Brutto (gross, incl. tax):
-- Prefer amounts labeled or implied as:
-  "Gesamt", "Gesamtpreis", "Total", "Tagesumsatz", "Amount Due".
-- If multiple totals exist, prefer the one closest to the bottom of the document.
-- If still ambiguous, choose the most prominent final payable amount.
-
-Netto (net, excl. tax):
-- Prefer amounts labeled or implied as:
-  "Netto", "Zwischensumme (ohne USt.)", "Subtotal (excl. VAT)".
-- Do NOT infer netto if no explicit or strongly implied net amount exists.
-
---------------------------------------------------
-STEP 4 — Consistency Check (important)
---------------------------------------------------
-- If both netto and a tax amount are visible, brutto should approximately equal:
-  netto + tax (allow small rounding differences).
-- If only brutto is clearly identifiable, leave netto empty.
-
---------------------------------------------------
-STEP 5 — Output Constraints
---------------------------------------------------
 Return ONLY valid JSON with exactly these keys:
-["brutto","netto","score_brutto","score_netto","store_name"]
+{fields_beleg}
 
-Formatting rules:
+Rules:
 - Monetary values must be strings using comma or dot as in the document (e.g. "9,98" or "9.98").
+- date must be ISO format (YYYY-MM-DD) if present.
 - If a value is unknown, use an empty string "".
 
-Scoring rules:
-- score_brutto and score_netto MUST be one of: [-1, 0, 1].
-- Use:
-  1  = explicitly labeled and unambiguous
-  0  = inferred or chosen among multiple candidates
-  -1 = not found / cannot be determined
-
---------------------------------------------------
-STEP 6 — Store Name
---------------------------------------------------
-- store_name should be the merchant or seller name if clearly visible.
-- If not identifiable, use "" and keep scores unchanged.
-
---------------------------------------------------
-FINAL RULE
---------------------------------------------------
-If multiple candidates exist:
-- Choose the most likely one based on labels, position, and consistency.
-- Set the corresponding score to 0.
-
---------------------------------------------------
-Example output:
-{"brutto":"8,94","netto":"8,36","score_brutto":1,"score_netto":1,"store_name":"REWE"}
+Example:
+{{"brutto":"8,94","netto":"8,36","store_name":"REWE","date":"2025-08-15"}}
 """
 
+prompt_zbon = f"""
+You are an expert receipt parser.
 
+Return ONLY valid JSON with exactly these keys:
+{fields_zbon}
 
-prompt_zbon = """
-    You are an expert invoice parser. Analyze this receipt and return JSON with:
-    1) brutto: Notice that brutto may be represented by the name Tagesumsatz; 
-    2) netto: Notice that netto may be represented by the name nettoumsatz, and it's near to the attribute Umsatzsteuer and Tagesumsatz;
-    3) two confidence scores called score_brutto and score_netto: 
-        3.1) if the brutto or netto keyword exists but the result is uncertain, return 0
-        3.2) if it is certain, return 1
-        3.3) if the keyword doesn't exist, or anything else, return -1
-    The final output JSON format should be:
-    {
-        "brutto": "1234.56",
-        "netto": "987.65",
-        "score_brutto": 1,
-        "score_netto": 0,
-    }, or for a receipt without netto:
-    {
-        "brutto": "15,00",
-        "netto": "",
-        "score_brutto": 1,
-        "score_netto": -1,
-    }
+Rules:
+- brutto may appear as "Tagesumsatz" or "Gesamtbetrag".
+- netto may appear as "Nettoumsatz".
+- date must be ISO format (YYYY-MM-DD) if present.
+- If a value is unknown, use an empty string "".
+
+Example:
+{{"brutto":"1234.56","netto":"987.65","store_name":"REWE","date":"2025-08-15"}}
 """
+
 prompts_dict = {
-    'beleg': {
-        "fields":  ["brutto","netto","score_brutto","score_netto","store_name"],
-        "prompt": prompt_beleg},
-    'zbon': {
-        "fields": ["brutto", "netto", "score_brutto", "score_netto"],
-        "prompt": prompt_zbon
-    }
+    "beleg": {"fields": fields_beleg, "prompt": prompt_beleg},
+    "zbon": {"fields": fields_zbon, "prompt": prompt_zbon},
 }
 
 DEFAULT_PROMPT = prompt_beleg

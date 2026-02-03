@@ -88,9 +88,9 @@ def summarize_reliability(
 
     for item in items:
         filename = str(item.get("filename") or "")
-        result = item.get("result") or {}
-        score_brutto = _to_score(_get_field(result, "score_brutto"))
-        score_netto = _to_score(_get_field(result, "score_netto"))
+        score_block = item.get("score") or item.get("result") or {}
+        score_brutto = _to_score(_get_field(score_block, "brutto"))
+        score_netto = _to_score(_get_field(score_block, "netto"))
         if score_brutto is None or score_netto is None:
             failed.append(filename)
             continue
@@ -167,7 +167,14 @@ def main() -> None:
         )
         raise SystemExit(1)
 
-    items = json.loads(json_path.read_text(encoding="utf-8"))
+    raw = json_path.read_text(encoding="utf-8").strip()
+    if not raw:
+        print("Empty results file.")
+        raise SystemExit(1)
+    if raw.lstrip().startswith("["):
+        items = json.loads(raw)
+    else:
+        items = [json.loads(line) for line in raw.splitlines() if line.strip()]
     if category is not None:
         items = [item for item in items if _matches_category(item, category)]
     all_ok, partial_ok, failed = summarize_results(items)
