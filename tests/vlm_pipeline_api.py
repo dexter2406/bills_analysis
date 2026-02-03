@@ -2,9 +2,12 @@ from __future__ import annotations
 
 import json
 import sys
+import time
 from pathlib import Path
 from datetime import datetime
 from typing import Iterable
+
+import fitz  # PyMuPDF
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
 SRC_DIR = ROOT_DIR / "src"
@@ -12,7 +15,6 @@ if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
 from bills_analysis.preprocess import compress_image_only_pdf, preprocess_image
-from bills_analysis.render import render_pdf_to_images
 from bills_analysis.vlm import DEFAULT_PROMPT, prompts_dict
 from bills_analysis.contracts import PageInfo
 from bills_analysis.extract_by_azure_api import analyze_document_with_azure
@@ -29,6 +31,20 @@ def get_img_ratio(page: PageInfo) -> float:
     if page.width <= 0:
         return 0.0
     return page.height / page.width
+
+
+def _get_pdf_page_ratio(doc: fitz.Document) -> float | None:
+    if doc.page_count < 1:
+        return None
+    page = doc.load_page(0)
+    rect = page.rect
+    width = rect.width
+    height = rect.height
+    if page.rotation in (90, 270):
+        width, height = height, width
+    if width <= 0:
+        return None
+    return height / width
 
 def _to_grayscale(
     src: Path,
@@ -77,41 +93,91 @@ def run_pipeline(
     *,
     output_root: Path,
     backup_dest_dir: Path,
-    results_path: Path | None = None,
+    category: str,
+    results_dir: Path | None = None,
     dpi: int = 300,
     prompt: str = DEFAULT_PROMPT,
     model: str = "qwen3-vl:4b",
     purpose="beleg",
 ) -> None:
-    if results_path is None:
-        results_path = output_root / "extracted_results.json"
+    timestamp = int(datetime.now().timestamp())
+    if results_dir is None:
+        results_dir = output_root
+    if results_dir.exists() and results_dir.is_file():
+        print(f"--out_dir 不能是文件: {results_dir}")
+        raise SystemExit(1)
+    results_dir.mkdir(parents=True, exist_ok=True)
+    results_path = results_dir / f"results_{timestamp}.json"
 
     results: list[dict[str, object]] = []
 
-    for pdf in pdf_paths:
+    def _write_results() -> None:
+        results_path.parent.mkdir(parents=True, exist_ok=True)
+        results_path.write_text(
+            json.dumps(results, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+
+    for idx, pdf in enumerate(pdf_paths):
         pdf_path = Path(pdf)
         if not pdf_path.exists():
             print(f"未找到PDF: {pdf_path}")
             continue
         file_type = "invoice"
         max_side = 1000
-        print(f"\n=== 开始处理PDF: {pdf_path} ===")
+        print(f"\n=== 开始处理PDF ({idx}/{len(pdf_paths)}: {pdf_path} ===")
+        pdf_read_failed = False
+        try:
+            with fitz.open(pdf_path) as doc:
+                pdf_page_count = doc.page_count
+                pdf_ratio = _get_pdf_page_ratio(doc)
+        except Exception as exc:
+            print(f"[PDF] 读取页数失败: {exc}")
+            pdf_page_count = None
+            pdf_ratio = None
+            pdf_read_failed = True
+        start = time.perf_counter()
         run_dir = output_root / pdf_path.stem
-        pages = render_pdf_to_images(pdf_path, run_dir / "pages", dpi=dpi, skip_errors=False)
+        # pages = render_pdf_to_images(pdf_path, run_dir / "pages", dpi=dpi, skip_errors=False)
         extracted_kv = {llm_field: None for llm_field in prompts_dict[purpose]['fields']} # Brutto, Netto, etc.
-        result_entry = {"filename": pdf_path.name, "result": extracted_kv}
+        result_entry = {
+            "filename": pdf_path.name,
+            "result": extracted_kv,
+            "category": category,
+        }
         print(extracted_kv)
-        if not pages:
-            print(f"未渲染出页面，跳过: {pdf_path}")
+        if pdf_read_failed:
+            print("[PDF] 读取失败，跳过后续处理。")
+            extracted_kv["brutto"] = None
+            extracted_kv["netto"] = None
+            extracted_kv["score_brutto"] = None
+            extracted_kv["score_netto"] = None
+            result_entry["proc_time"] = time.perf_counter() - start
             results.append(result_entry)
+            _write_results()
             continue
-
-        if len(pages) == 1 and get_img_ratio(pages[0]) > THRESHOLD_RECEIPT_RATIO:
+        # if not pages:
+        #     print(f"未渲染出页面，跳过: {pdf_path}")
+        #     result_entry["proc_time"] = time.perf_counter() - start
+        #     results.append(result_entry)
+        #     _write_results()
+        #     continue
+        
+        if pdf_page_count == 1 and pdf_ratio is not None and pdf_ratio > THRESHOLD_RECEIPT_RATIO:
             file_type = "receipt"
             crop_y = [0,0.6]
         model_id = f"prebuilt-{file_type}"
         print(f"调用Azure: {pdf_path.name} | model {model_id}")
-        azure_result = analyze_document_with_azure(str(pdf_path), model_id=model_id)
+        print("完成前处理，耗时: %.2f 秒" % (time.perf_counter() - start))
+        try:
+            azure_result = analyze_document_with_azure(str(pdf_path), model_id=model_id)
+        except Exception as exc:
+            print(f"[Azure] 调用失败: {exc}")
+            extracted_kv["brutto"] = None
+            extracted_kv["netto"] = None
+            extracted_kv["score_brutto"] = None
+            extracted_kv["score_netto"] = None
+            azure_result = None
         if azure_result:
             value_map = {
                 "brutto": azure_result.get("brutto"),
@@ -144,10 +210,10 @@ def run_pipeline(
                 compressed_pdf.rename(target)
                 print(f"备份文件已重命名: {target.name}")
         print(f"=== 完成处理PDF: {pdf_path} ===\n")
+        result_entry["proc_time"] = time.perf_counter() - start
         results.append(result_entry)
+        _write_results()
 
-    results_path.parent.mkdir(parents=True, exist_ok=True)
-    results_path.write_text(json.dumps(results, ensure_ascii=False, indent=2), encoding="utf-8")
     print(f"检测结果已保存: {results_path}")
 
 
@@ -156,15 +222,18 @@ def run_pipeline(
 if __name__ == "__main__":
     backup_dest_dir = ROOT_DIR / "outputs" / "test_comp_pdf"
     input_dir: Path | None = None
-    results_path: Path | None = None
+    results_dir: Path | None = None
+    category: str | None = None
     inputs = []
     for arg in sys.argv[1:]:
         if arg.startswith("--dest-dir="):
             backup_dest_dir = Path(arg.split("=", 1)[1].strip('"'))
         elif arg.startswith("--input-dir="):
             input_dir = Path(arg.split("=", 1)[1].strip('"'))
-        elif arg.startswith("--output-json="):
-            results_path = Path(arg.split("=", 1)[1].strip('"'))
+        elif arg.startswith("--out_dir="):
+            results_dir = Path(arg.split("=", 1)[1].strip('"'))
+        elif arg.startswith("--cat="):
+            category = arg.split("=", 1)[1].strip('"')
         else:
             inputs.append(arg)
     if input_dir is not None:
@@ -183,13 +252,17 @@ if __name__ == "__main__":
     if not inputs:
         print(
             "用法: python tests/vlm_pipeline_api.py <pdf1> [pdf2 ...] "
-            "[--input-dir=PATH] [--dest-dir=PATH] [--output-json=PATH]"
+            "[--input-dir=PATH] [--dest-dir=PATH] [--out_dir=PATH] [--cat=NAME]"
         )
+        raise SystemExit(1)
+    if not category:
+        print("必须指定 --cat=NAME")
         raise SystemExit(1)
     run_pipeline(
         inputs,
         output_root=ROOT_DIR / "outputs" / "vlm_pipeline",
         backup_dest_dir=backup_dest_dir,
-        results_path=results_path,
+        category=category,
+        results_dir=results_dir,
         dpi=150,
     )

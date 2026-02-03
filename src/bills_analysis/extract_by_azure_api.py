@@ -18,7 +18,7 @@ def analyze_document_with_azure(image_path: str, model_id: str = "prebuilt-invoi
     key = os.getenv("AZURE_DOCUMENT_INTELLIGENCE_KEY")
     print(f"[Azure] model_id={model_id}")   # "prebuilt-invoice" / "prebuilt-receipt"
     print(f"[Azure] image_path={image_path}")
-    print(f"[Azure] endpoint_set={bool(endpoint)} key_set={bool(key)}")
+    # print(f"[Azure] endpoint_set={bool(endpoint)} key_set={bool(key)}")
 
     if not endpoint or not key:
         raise ValueError("请在环境变量中设置 AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT 和 KEY")
@@ -32,14 +32,13 @@ def analyze_document_with_azure(image_path: str, model_id: str = "prebuilt-invoi
     print(f"[Azure] bytes_read={len(file_content)}")
 
     # 根据调用前判断好的 model_id 进行分析
-    print("[Azure] begin analyze")
+    # print("[Azure] begin analyze")
     poller = client.begin_analyze_document(
         model_id, 
         AnalyzeDocumentRequest(bytes_source=file_content)
     )
     result = poller.result()
-    print("[Azure] analyze finished")
-    print(f"[Azure] documents_count={len(result.documents) if result.documents else 0}")
+    print(f"[Azure] Finished documents_count={len(result.documents) if result.documents else 0}")
 
     extracted_data = {
         "model_used": model_id,
