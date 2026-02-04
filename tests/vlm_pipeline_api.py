@@ -35,7 +35,7 @@ def get_img_ratio(page: PageInfo) -> float:
     return page.height / page.width
 
 
-def _get_pdf_page_ratio(doc: fitz.Document) -> float | None:
+def get_pdf_page_ratio(doc: fitz.Document) -> float | None:
     if doc.page_count < 1:
         return None
     page = doc.load_page(0)
@@ -48,7 +48,7 @@ def _get_pdf_page_ratio(doc: fitz.Document) -> float | None:
         return None
     return height / width
 
-def _to_grayscale(
+def to_grayscale(
     src: Path,
     dest: Path,
     *,
@@ -145,7 +145,7 @@ def run_pipeline(
         try:
             with fitz.open(pdf_path) as doc:
                 pdf_page_count = doc.page_count
-                pdf_ratio = _get_pdf_page_ratio(doc)
+                pdf_ratio = get_pdf_page_ratio(doc)
         except Exception as exc:
             print(f"[PDF] 读取页数失败: {exc}")
             pdf_page_count = None
