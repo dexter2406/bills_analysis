@@ -9,9 +9,9 @@ from openpyxl import Workbook
 from openpyxl.styles import PatternFill
 
 from bills_analysis.excel_ops import (
-    build_rows,
-    compute_low_headers,
+    build_rows_with_meta,
     low_confidence_fields,
+    normalize_date,
     threshold_for,
     to_score,
 )
@@ -80,7 +80,7 @@ def main() -> None:
     thresholds = load_thresholds(thresholds_path)
     for item in items:
         log_low_conf(item, thresholds)
-    rows = build_rows(items, thresholds)
+    rows, beleg_files_by_date = build_rows_with_meta(items, thresholds)
     if not rows:
         print("No rows generated.")
         raise SystemExit(1)
@@ -102,11 +102,41 @@ def main() -> None:
     # Highlight low-confidence fields in orange
     header_to_col = {name: idx + 1 for idx, name in enumerate(headers)}
     data_row_idx = 2
-    low_headers = compute_low_headers(
-        items,
-        thresholds,
-        first.get("Datum") or "UNKNOWN",
-    )
+    # Map low-confidence fields to the Ausgabe slot based on actual output order
+    datum = first.get("Datum") or "UNKNOWN"
+    low_headers = set()
+    # BAR items
+    for item in items:
+        result = item.get("result") or {}
+        run_date = normalize_date(result.get("run_date")) or "UNKNOWN"
+        if run_date != datum:
+            continue
+        category = str(item.get("category") or "").strip().lower()
+        if category != "bar":
+            continue
+        low_fields = low_confidence_fields(result, item.get("score") or {}, thresholds)
+        if "brutto" in low_fields:
+            low_headers.add("Umsatz Brutto")
+        if "netto" in low_fields:
+            low_headers.add("Umsatz Netto")
+    # Beleg items by slot
+    beleg_files = beleg_files_by_date.get(datum, [])
+    for idx, fname in enumerate(beleg_files, start=1):
+        for item in items:
+            if str(item.get("filename") or "") != fname:
+                continue
+            low_fields = low_confidence_fields(
+                item.get("result") or {},
+                item.get("score") or {},
+                thresholds,
+            )
+            if "store_name" in low_fields:
+                low_headers.add(f"Ausgabe {idx} Name")
+            if "brutto" in low_fields:
+                low_headers.add(f"Ausgabe {idx} Brutto")
+            if "netto" in low_fields:
+                low_headers.add(f"Ausgabe {idx} Netto")
+            break
 
     for header in low_headers:
         col = header_to_col.get(header)

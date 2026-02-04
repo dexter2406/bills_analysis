@@ -114,7 +114,7 @@ def low_confidence_fields(
     thresholds: dict[str, Any],
 ) -> set[str]:
     low: set[str] = set()
-    fields_to_check = ["brutto", "netto", "store_name", "total_tax"]
+    fields_to_check = ["brutto", "netto", "total_tax"]
     for field in fields_to_check:
         value = result.get(field)
         if value in (None, "", "None"):
@@ -179,13 +179,14 @@ def compute_low_headers(
     return low_headers
 
 
-def build_rows(
+def build_rows_with_meta(
     items: list[dict[str, Any]],
     thresholds: dict[str, Any],
     *,
     max_beleg: int = 5,
-) -> list[dict[str, Any]]:
+) -> tuple[list[dict[str, Any]], dict[str, list[str]]]:
     rows: dict[str, dict[str, Any]] = {}
+    beleg_files_by_date: dict[str, list[str]] = {}
 
     for item in items:
         category = str(item.get("category") or "").strip().lower()
@@ -205,6 +206,7 @@ def build_rows(
                 "Ausgaben": [],
             }
             rows[run_date] = row
+            beleg_files_by_date.setdefault(run_date, [])
 
         brutto = to_float(result.get("brutto"))
         netto = to_float(result.get("netto"))
@@ -219,6 +221,7 @@ def build_rows(
                 row["Ausgaben"].append(
                     {"Name": store, "Brutto": brutto, "Netto": netto}
                 )
+                beleg_files_by_date[run_date].append(str(item.get("filename") or ""))
             row["Wie viel Rechnungen"] = row["_beleg_count"]
 
         if needs_review(result, score, thresholds):
@@ -246,7 +249,17 @@ def build_rows(
                 out[f"{key_base} Netto"] = None
         output_rows.append(out)
 
-    return output_rows
+    return output_rows, beleg_files_by_date
+
+
+def build_rows(
+    items: list[dict[str, Any]],
+    thresholds: dict[str, Any],
+    *,
+    max_beleg: int = 5,
+) -> list[dict[str, Any]]:
+    rows, _ = build_rows_with_meta(items, thresholds, max_beleg=max_beleg)
+    return rows
 
 
 def merge_validated_row(
