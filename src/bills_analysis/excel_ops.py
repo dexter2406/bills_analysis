@@ -200,7 +200,7 @@ def build_rows_with_meta(
                 "Datum": run_date,
                 "Umsatz Brutto": None,
                 "Umsatz Netto": None,
-                "需要校验": False,
+                "need review": False,
                 "Wie viel Rechnungen": 0,
                 "_zbon_count": 0,
                 "Ausgaben": [],
@@ -225,7 +225,7 @@ def build_rows_with_meta(
             row["Wie viel Rechnungen"] = row["_zbon_count"]
 
         if needs_review(result, score, thresholds):
-            row["需要校验"] = True
+            row["need review"] = True
 
     output_rows: list[dict[str, Any]] = []
     for row in rows.values():
@@ -233,7 +233,7 @@ def build_rows_with_meta(
             "Datum": row["Datum"],
             "Umsatz Brutto": row["Umsatz Brutto"],
             "Umsatz Netto": row["Umsatz Netto"],
-            "需要校验": row["需要校验"],
+            "need review": row["need review"],
             "Wie viel Rechnungen": row["Wie viel Rechnungen"],
         }
         for idx in range(max_zbon):
@@ -280,7 +280,7 @@ def merge_validated_row(
     updates: dict[str, Any] = {}
     missing: list[str] = []
     for h, v in zip(validated_headers, validated_row):
-        if normalize_header(h) == normalize_header("需要校验"):
+        if normalize_header(h) == normalize_header("need review"):
             continue
         key = normalize_header(h)
         target_header = header_map.get(key)

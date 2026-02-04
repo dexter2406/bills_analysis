@@ -105,6 +105,19 @@ def main() -> None:
         print(f"[WARN] Multiple dates found ({len(rows)}). Only the first row will be written.")
 
     first = rows[0]
+    # need review = (low confidence) OR (page_count > 4)
+    datum = first.get("Datum") or "UNKNOWN"
+    need_review = bool(first.get("need review"))
+    for item in items:
+        result = item.get("result") or {}
+        run_date = normalize_date(result.get("run_date")) or "UNKNOWN"
+        if run_date != datum:
+            continue
+        page_count = item.get("page_count")
+        if isinstance(page_count, int) and page_count > 4:
+            need_review = True
+            break
+    first["need review"] = need_review
     headers = list(first.keys())
 
     thresholds = load_thresholds(Path(__file__).with_name("score_thresholds.json"))
@@ -159,8 +172,8 @@ def main() -> None:
         col = header_to_col.get(header)
         if col is not None:
             ws.cell(row=data_row_idx, column=col).fill = orange_fill
-    if low_headers:
-        col = header_to_col.get("需要校验")
+    if need_review:
+        col = header_to_col.get("need review")
         if col is not None:
             ws.cell(row=data_row_idx, column=col).fill = orange_fill
 

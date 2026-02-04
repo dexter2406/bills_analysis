@@ -107,6 +107,9 @@ def get_compressed_pdf_name(category: str, extracted_kv: dict, run_date: str) ->
         return None
     return None
 
+def calc_proc_time(start: float) -> tuple[float, float]:
+    time_now = time.perf_counter()
+    return time_now, time_now - start
 
 def run_pipeline(
     pdf_paths: Iterable[str],
@@ -171,7 +174,6 @@ def run_pipeline(
             pdf_read_failed = True
         start = time.perf_counter()
         run_dir = output_root / pdf_path.stem
-        # pages = render_pdf_to_images(pdf_path, run_dir / "pages", dpi=dpi, skip_errors=False)
         extracted_kv = {llm_field: None for llm_field in prompts_dict[purpose]['fields']} # brutto, netto, store_name, run_date
         score_kv = {llm_field: None for llm_field in prompts_dict[purpose]['fields']}
         score_kv.pop("run_date", None)
@@ -181,6 +183,7 @@ def run_pipeline(
             "result": extracted_kv,
             "score": score_kv,
             "category": category,
+            "page_count": pdf_page_count,
         }
         print(extracted_kv)
         if pdf_read_failed:
@@ -191,28 +194,30 @@ def run_pipeline(
             score_kv["netto"] = None
             result_entry["proc_time"] = time.perf_counter() - start
             return result_entry
-        # if not pages:
-        #     print(f"未渲染出页面，跳过: {pdf_path}")
-        #     result_entry["proc_time"] = time.perf_counter() - start
-        #     results.append(result_entry)
-        #     _write_results()
-        #     continue
         
         if pdf_page_count == 1 and pdf_ratio is not None and pdf_ratio > THRESHOLD_RECEIPT_RATIO:
             file_type = "receipt"
             crop_y = [0,0.6]
         model_id = f"prebuilt-{file_type}"
         print(f"调用Azure: {pdf_path.name} | model {model_id}")
-        print("完成前处理，耗时: %.2f 秒" % (time.perf_counter() - start))
-        try:
-            azure_result = analyze_document_with_azure(str(pdf_path), model_id=model_id)
-        except Exception as exc:
-            print(f"[Azure] 调用失败: {exc}")
-            extracted_kv["brutto"] = None
-            extracted_kv["netto"] = None
-            score_kv["brutto"] = None
-            score_kv["netto"] = None
-            azure_result = None
+        time_now, result_entry["preproc_time"] = calc_proc_time(start)
+        print("完成前处理，耗时: %.2f 秒" % result_entry["preproc_time"])
+        azure_result = None
+        if pdf_page_count is not None and pdf_page_count > 4:
+            print(f"[PDF] 页数 {pdf_page_count} > 4，跳过 Azure 解析。")
+            result_entry["skip_reason"] = "page_count>4"
+        else:
+            try:
+                azure_result = analyze_document_with_azure(str(pdf_path), model_id=model_id)
+            except Exception as exc:
+                print(f"[Azure] 调用失败: {exc}")
+                extracted_kv["brutto"] = None
+                extracted_kv["netto"] = None
+                score_kv["brutto"] = None
+                score_kv["netto"] = None
+                azure_result = None
+        time_now, result_entry["proc_time"] = calc_proc_time(time_now)
+        print("完成账单分析，耗时: %.2f 秒" % result_entry["proc_time"])
         if azure_result:
             store_name = azure_result.get("store_name").split('\n')[0].split('.')[0]
             value_map = {
@@ -233,10 +238,12 @@ def run_pipeline(
         archive_dir = backup_dest_dir / get_archive_subdir_name(run_date, category)
         final_pdf = None
         try:
+            name_suffix = str(time.time_ns())
             compressed_pdf = compress_image_only_pdf(
                 pdf_path,
                 dest_dir=archive_dir,
                 dpi=dpi,
+                name_suffix=name_suffix,
             )
             final_pdf = compressed_pdf
             new_name = get_compressed_pdf_name(category, extracted_kv, run_date)
@@ -255,7 +262,8 @@ def run_pipeline(
         if final_pdf is not None:
             result_entry["preview_path"] = str(final_pdf)
         print(f"=== 完成处理PDF: {pdf_path} ===\n")
-        result_entry["proc_time"] = time.perf_counter() - start
+        _ , result_entry["postproc_time"] = calc_proc_time(time_now)
+        print("完成后处理，耗时: %.2f 秒" % result_entry["proc_time"])
         return result_entry
 
     pdf_list = list(pdf_paths)

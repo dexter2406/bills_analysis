@@ -192,6 +192,7 @@ def compress_image_only_pdf(
     *,
     dest_dir: Path,
     dpi: int = 150,
+    name_suffix: str | None = None,
 ) -> Path:
     """
     If PDF has text layer, copy as-is to dest_dir.
@@ -199,7 +200,8 @@ def compress_image_only_pdf(
     """
 
     dest_dir.mkdir(parents=True, exist_ok=True)
-    dest_pdf = dest_dir / pdf_path.name
+    suffix = f"_{name_suffix}" if name_suffix else ""
+    dest_pdf = dest_dir / f"{pdf_path.stem}{suffix}{pdf_path.suffix}"
 
     if detect_pdf_has_text_layer(pdf_path):
         shutil.copy2(pdf_path, dest_pdf)

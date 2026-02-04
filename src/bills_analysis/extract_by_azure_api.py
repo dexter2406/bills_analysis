@@ -1,10 +1,47 @@
 # src/bills_analysis/azure_extraction.py
 
+import json
 import os
 from dotenv import load_dotenv
 from azure.core.credentials import AzureKeyCredential
 from azure.ai.documentintelligence import DocumentIntelligenceClient
 from azure.ai.documentintelligence.models import AnalyzeDocumentRequest
+
+
+def _extract_amount(field) -> float | None:
+    print([f"Extracting amount from field: {field}"])
+    if not field:
+        return None
+    if getattr(field, "value_currency", None):
+        print([f"  found value_currency: {field.value_currency}"])
+        return field.value_currency.amount
+    if getattr(field, "valueCurrency", None):
+        print([f"  found valueCurrency: {field.valueCurrency}"])
+        return field.valueCurrency.amount
+    if getattr(field, "value_number", None) is not None:
+        print([f"  found value_number: {field.value_number}"])  
+        return field.value_number
+    # Fallback: parse content like "1.181,75"
+    content = getattr(field, "content", None)
+    if not content:
+        return None
+    text = str(content).strip()
+    if not text:
+        return None
+    text = text.replace(" ", "")
+    # normalize 1.181,75 or 1,181.75
+    if "," in text and "." in text:
+        if text.rfind(",") > text.rfind("."):
+            text = text.replace(".", "")
+            text = text.replace(",", ".")
+        else:
+            text = text.replace(",", "")
+    else:
+        text = text.replace(",", ".")
+    try:
+        return float(text)
+    except ValueError:
+        return None
 
 load_dotenv()
 
@@ -23,7 +60,11 @@ def analyze_document_with_azure(image_path: str, model_id: str = "prebuilt-invoi
     if not endpoint or not key:
         raise ValueError("请在环境变量中设置 AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT 和 KEY")
 
-    client = DocumentIntelligenceClient(endpoint=endpoint, credential=AzureKeyCredential(key))
+    client = DocumentIntelligenceClient(
+        endpoint=endpoint, 
+        credential=AzureKeyCredential(key),
+        api_version="2024-11-30"
+        )
     print("[Azure] client created")
 
     # 读取本地文件为字节流
@@ -38,6 +79,7 @@ def analyze_document_with_azure(image_path: str, model_id: str = "prebuilt-invoi
         AnalyzeDocumentRequest(bytes_source=file_content)
     )
     result = poller.result()
+    print(json.dumps(result.as_dict(), indent=2))
     print(f"[Azure] Finished documents_count={len(result.documents) if result.documents else 0}")
 
     extracted_data = {
@@ -56,6 +98,7 @@ def analyze_document_with_azure(image_path: str, model_id: str = "prebuilt-invoi
     if result.documents:
         doc = result.documents[0]
         fields = doc.fields
+        # print(fields)
         print(f"[Azure] fields keys: {list(fields.keys())}")
         # 1. Store Name 提取
         if model_id == "prebuilt-receipt":
@@ -68,11 +111,15 @@ def analyze_document_with_azure(image_path: str, model_id: str = "prebuilt-invoi
             extracted_data["confidence_store_name"] = f_vendor.confidence if f_vendor else None
 
         # 2. Brutto (总额) 提取
-        # Receipt 对应 Total; Invoice 对应 InvoiceTotal
-        f_total = fields.get("Total") if model_id == "prebuilt-receipt" else fields.get("InvoiceTotal")
+        # Prefer model-specific field, but fallback to other common fields.
+        f_total = None
+        if model_id == "prebuilt-receipt":
+            f_total = fields.get("Total") or fields.get("InvoiceTotal")
+        else:
+            f_total = fields.get("InvoiceTotal") or fields.get("Total")
+        print(f"[Azure] f_total field: {f_total}")
         if f_total:
-            # 优先取金额数值，若无则取数字数值
-            extracted_data["brutto"] = f_total.value_currency.amount if f_total.value_currency else f_total.value_number
+            extracted_data["brutto"] = _extract_amount(f_total)
             extracted_data["confidence_brutto"] = f_total.confidence
         print(f"[Azure] brutto={extracted_data['brutto']} conf={extracted_data['confidence_brutto']}")
 
@@ -80,7 +127,7 @@ def analyze_document_with_azure(image_path: str, model_id: str = "prebuilt-invoi
         # 官方文档显示两者均对应 Subtotal 字段
         f_subtotal = fields.get("Subtotal")
         if f_subtotal:
-            extracted_data["netto"] = f_subtotal.value_currency.amount if f_subtotal.value_currency else f_subtotal.value_number
+            extracted_data["netto"] = _extract_amount(f_subtotal)
             extracted_data["confidence_netto"] = f_subtotal.confidence
             print(f"[Azure] subtotal={extracted_data['netto']} conf={extracted_data['confidence_netto']}")
 
@@ -89,7 +136,7 @@ def analyze_document_with_azure(image_path: str, model_id: str = "prebuilt-invoi
             f_total_tax = fields.get("TotalTax")
             total_tax = None
             if f_total_tax:
-                total_tax = f_total_tax.value_currency.amount if f_total_tax.value_currency else f_total_tax.value_number
+                total_tax = _extract_amount(f_total_tax)
                 extracted_data["total_tax"] = total_tax
                 extracted_data["confidence_total_tax"] = f_total_tax.confidence
             if total_tax is not None:
@@ -124,5 +171,5 @@ if __name__ == "__main__":
 
     img_path = rf"D:\CodeSpace\prj_rechnung\bills_analysis\data\samples\scanned\bad_case\Nanjing 20_23.pdf"
     analyze_document_with_azure(img_path, model_id="prebuilt-invoice")
-    img_path = rf"D:\CodeSpace\prj_rechnung\bills_analysis\data\samples\scanned\Metzgerei 105_13.pdf"
-    analyze_document_with_azure(img_path, model_id="prebuilt-receipt")
+    # img_path = rf"D:\CodeSpace\prj_rechnung\bills_analysis\data\samples\scanned\Metzgerei 105_13.pdf"
+    # analyze_document_with_azure(img_path, model_id="prebuilt-receipt")
