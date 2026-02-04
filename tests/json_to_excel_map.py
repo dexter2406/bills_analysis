@@ -72,22 +72,22 @@ def build_rows(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
     for item in items:
         category = str(item.get("category") or "").strip().lower()
         result = item.get("result") or {}
-        date = _normalize_date(result.get("date"))
-        if not date:
-            date = "UNKNOWN"
-            print(f"[WARN] Missing date for {item.get('filename')}")
+        run_date = _normalize_date(result.get("run_date"))
+        if not run_date:
+            run_date = "UNKNOWN"
+            print(f"[WARN] Missing run_date for {item.get('filename')}")
 
-        row = rows.get(date)
+        row = rows.get(run_date)
         if row is None:
             row = {
-                "Datum": date,
+                "Datum": run_date,
                 "Umsatz Brutto": None,
                 "Umsatz Netto": None,
                 "Wie viel Rechnungen": 0,
                 "_beleg_count": 0,
                 "Ausgaben": [],
             }
-            rows[date] = row
+            rows[run_date] = row
 
         brutto = _to_float(result.get("brutto"))
         netto = _to_float(result.get("netto"))
@@ -95,7 +95,7 @@ def build_rows(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
         if category == "bar":
             if row["Umsatz Brutto"] is not None or row["Umsatz Netto"] is not None:
-                print(f"[WARN] Duplicate BAR for {date}, overwriting Umsatz values.")
+                print(f"[WARN] Duplicate BAR for {run_date}, overwriting Umsatz values.")
             row["Umsatz Brutto"] = brutto
             row["Umsatz Netto"] = netto
         elif category == "beleg":
@@ -105,7 +105,7 @@ def build_rows(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
                     {"Name": store, "Brutto": brutto, "Netto": netto}
                 )
             else:
-                print(f"[WARN] Beleg > 5 for {date}, truncating extra.")
+                print(f"[WARN] Beleg > 5 for {run_date}, truncating extra.")
             row["Wie viel Rechnungen"] = row["_beleg_count"]
         else:
             print(f"[WARN] Unknown category '{category}' for {item.get('filename')}")

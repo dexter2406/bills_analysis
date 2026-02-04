@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import argparse
 import json
 import sys
 import time
@@ -95,6 +96,7 @@ def run_pipeline(
     output_root: Path,
     backup_dest_dir: Path,
     category: str,
+    run_date: str,
     results_dir: Path | None = None,
     dpi: int = 300,
     prompt: str = DEFAULT_PROMPT,
@@ -150,8 +152,10 @@ def run_pipeline(
         start = time.perf_counter()
         run_dir = output_root / pdf_path.stem
         # pages = render_pdf_to_images(pdf_path, run_dir / "pages", dpi=dpi, skip_errors=False)
-        extracted_kv = {llm_field: None for llm_field in prompts_dict[purpose]['fields']} # brutto, netto, store_name, date
+        extracted_kv = {llm_field: None for llm_field in prompts_dict[purpose]['fields']} # brutto, netto, store_name, run_date
         score_kv = {llm_field: None for llm_field in prompts_dict[purpose]['fields']}
+        score_kv.pop("run_date", None)
+        extracted_kv["run_date"] = run_date
         result_entry = {
             "filename": pdf_path.name,
             "result": extracted_kv,
@@ -195,7 +199,6 @@ def run_pipeline(
                 "brutto": azure_result.get("brutto"),
                 "netto": azure_result.get("netto"),
                 "store_name": store_name[0].upper() + store_name[1:],
-                "date": azure_result.get("date"),
             }
             for key, value in value_map.items():
                 if key in extracted_kv and value not in (None, "", "None"):
@@ -203,7 +206,6 @@ def run_pipeline(
             score_kv["brutto"] = azure_result.get("confidence_brutto")
             score_kv["netto"] = azure_result.get("confidence_netto")
             score_kv["store_name"] = azure_result.get("confidence_store_name")
-            score_kv["date"] = azure_result.get("confidence_date")
         print(f"extracted_kv: {extracted_kv}")
         print("开始压缩备份PDF...")
         compressed_pdf = compress_image_only_pdf(
@@ -248,49 +250,71 @@ def run_pipeline(
 
 
 if __name__ == "__main__":
-    backup_dest_dir = ROOT_DIR / "outputs" / "test_comp_pdf"
-    input_dir: Path | None = None
-    results_dir: Path | None = None
-    category: str | None = None
-    inputs = []
-    for arg in sys.argv[1:]:
-        if arg.startswith("--dest-dir="):
-            backup_dest_dir = Path(arg.split("=", 1)[1].strip('"'))
-        elif arg.startswith("--input-dir="):
-            input_dir = Path(arg.split("=", 1)[1].strip('"'))
-        elif arg.startswith("--out_dir="):
-            results_dir = Path(arg.split("=", 1)[1].strip('"'))
-        elif arg.startswith("--cat="):
-            category = arg.split("=", 1)[1].strip('"')
-        else:
-            inputs.append(arg)
-    if input_dir is not None:
-        if not input_dir.exists():
-            print(f"目录不存在: {input_dir}")
+    parser = argparse.ArgumentParser(
+        description="Run Azure invoice/receipt extraction with optional PDF backup compression."
+    )
+    parser.add_argument(
+        "inputs",
+        nargs="*",
+        help="PDF file paths",
+    )
+    parser.add_argument(
+        "--input-dir",
+        dest="input_dir",
+        type=Path,
+        help="Directory containing PDFs (added to inputs)",
+    )
+    parser.add_argument(
+        "--dest-dir",
+        dest="backup_dest_dir",
+        type=Path,
+        default=ROOT_DIR / "outputs" / "test_comp_pdf",
+        help="Backup/compressed PDF output directory",
+    )
+    parser.add_argument(
+        "--out_dir",
+        dest="results_dir",
+        type=Path,
+        help="Results output directory",
+    )
+    parser.add_argument(
+        "--cat",
+        dest="category",
+        required=True,
+        help="Category name (e.g., BAR, Beleg)",
+    )
+    parser.add_argument(
+        "--run_date",
+        dest="run_date",
+        default=datetime.now().strftime("%d/%m/%Y"),
+        help="Run date in DD/MM/YYYY",
+    )
+    args = parser.parse_args()
+
+    inputs = list(args.inputs)
+    if args.input_dir is not None:
+        if not args.input_dir.exists():
+            print(f"目录不存在: {args.input_dir}")
             raise SystemExit(1)
-        if not input_dir.is_dir():
-            print(f"不是目录: {input_dir}")
+        if not args.input_dir.is_dir():
+            print(f"不是目录: {args.input_dir}")
             raise SystemExit(1)
         dir_pdfs = sorted(
-            (p for p in input_dir.iterdir() if p.is_file() and p.suffix.lower() == ".pdf"),
+            (p for p in args.input_dir.iterdir() if p.is_file() and p.suffix.lower() == ".pdf"),
             key=lambda p: p.name,
         )
         inputs.extend(str(p) for p in dir_pdfs)
     print(inputs)
     if not inputs:
-        print(
-            "用法: python tests/vlm_pipeline_api.py <pdf1> [pdf2 ...] "
-            "[--input-dir=PATH] [--dest-dir=PATH] [--out_dir=PATH] [--cat=NAME]"
-        )
+        print("必须提供至少一个 PDF 路径，或使用 --input-dir")
         raise SystemExit(1)
-    if not category:
-        print("必须指定 --cat=NAME")
-        raise SystemExit(1)
+
     run_pipeline(
         inputs,
         output_root=ROOT_DIR / "outputs" / "vlm_pipeline",
-        backup_dest_dir=backup_dest_dir,
-        category=category,
-        results_dir=results_dir,
+        backup_dest_dir=args.backup_dest_dir,
+        category=args.category,
+        run_date=args.run_date,
+        results_dir=args.results_dir,
         dpi=150,
     )

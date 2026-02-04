@@ -11,7 +11,7 @@ load_dotenv()
 def analyze_document_with_azure(image_path: str, model_id: str = "prebuilt-invoice"):
     """
     通用分析函数：支持指定使用 invoice 或 receipt 模型
-    提取：brutto, netto, store_name, date + 对应 confidence
+    提取：brutto, netto, store_name, run_date + 对应 confidence
     如果是 invoice 模型提取，则额外提取 invoice_id
     """
     endpoint = os.getenv("AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT")
@@ -48,8 +48,6 @@ def analyze_document_with_azure(image_path: str, model_id: str = "prebuilt-invoi
         "confidence_brutto": None,
         "netto": None,
         "confidence_netto": None,
-        "date": None,
-        "confidence_date": None,
         "invoice_id": None
     }
 
@@ -106,14 +104,6 @@ def analyze_document_with_azure(image_path: str, model_id: str = "prebuilt-invoi
             f_inv_id = fields.get("InvoiceId")
             extracted_data["invoice_id"] = f_inv_id.value_string if f_inv_id else None
 
-        # 6. Date (invoice -> InvoiceDate, receipt -> TransactionDate)
-        if model_id == "prebuilt-receipt":
-            f_date = fields.get("TransactionDate")
-        else:
-            f_date = fields.get("InvoiceDate")
-        if f_date:
-            extracted_data["date"] = f_date.value_date if hasattr(f_date, "value_date") else None
-            extracted_data["confidence_date"] = f_date.confidence
     print(f"[Azure] extracted_data for this page:\n{extracted_data}")
     return extracted_data
 

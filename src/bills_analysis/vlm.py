@@ -13,8 +13,8 @@ import requests
 from .contracts import FieldCandidate, PageInfo
 
 
-fields_beleg = ["brutto", "netto", "store_name", "date"]
-fields_zbon = ["brutto", "netto", "store_name", "date"]
+fields_beleg = ["brutto", "netto", "store_name", "run_date"]
+fields_zbon = ["brutto", "netto", "store_name", "run_date"]
 
 prompt_beleg = f"""
 You are an expert invoice and receipt parser.
@@ -24,11 +24,11 @@ Return ONLY valid JSON with exactly these keys:
 
 Rules:
 - Monetary values must be strings using comma or dot as in the document (e.g. "9,98" or "9.98").
-- date must be ISO format (YYYY-MM-DD) if present.
+- run_date must be ISO format (YYYY-MM-DD) if present.
 - If a value is unknown, use an empty string "".
 
 Example:
-{{"brutto":"8,94","netto":"8,36","store_name":"REWE","date":"2025-08-15"}}
+{{"brutto":"8,94","netto":"8,36","store_name":"REWE","run_date":"2025-08-15"}}
 """
 
 prompt_zbon = f"""
@@ -40,11 +40,11 @@ Return ONLY valid JSON with exactly these keys:
 Rules:
 - brutto may appear as "Tagesumsatz" or "Gesamtbetrag".
 - netto may appear as "Nettoumsatz".
-- date must be ISO format (YYYY-MM-DD) if present.
+- run_date must be ISO format (YYYY-MM-DD) if present.
 - If a value is unknown, use an empty string "".
 
 Example:
-{{"brutto":"1234.56","netto":"987.65","store_name":"REWE","date":"2025-08-15"}}
+{{"brutto":"1234.56","netto":"987.65","store_name":"REWE","run_date":"2025-08-15"}}
 """
 
 prompts_dict = {
