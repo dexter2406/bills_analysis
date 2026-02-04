@@ -23,7 +23,13 @@ Local backend CLI skeleton for the invoice Azure API extraction PoC.
 
 ## Usage examples
 - Azure API pipeline (PDFs can be multi-page):  
-  `uv run python tests/vlm_pipeline_api.py data/samples/digitized/demo.pdf --dest-dir=outputs/comp_pdf`
+  `uv run python tests/vlm_pipeline_api.py data/samples/digitized/demo.pdf --dest-dir=outputs/comp_pdf --run_date=12/01/2026 --cat=BAR`
+
+- Run BAR + ZBon together (merged into one results JSON):  
+  `uv run python tests/run_with_category.py --bar data/samples/bar/demo_bar.pdf --zbon-dir data/samples/zbon --run_date=12/01/2026`
+
+- Convert results JSON to a one-row Excel:  
+  `uv run python tests/json_to_excel_map.py outputs/vlm_pipeline/results_1770199982.json outputs/vlm_pipeline/results_1770199982.xlsx`
 
 ## Next steps (per PoC)
 - Fill the pipeline (render → preprocess → Azure API → extract → evidence) inside `src/bills_analysis/`.

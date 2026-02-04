@@ -1,9 +1,9 @@
 {
+  "max_pages": 4,
   "default": 0.8,
   "fields": {
     "brutto": 0.8,
     "netto": 0.8,
-    "store_name": 0.8,
     "total_tax": 0.8
   }
 }

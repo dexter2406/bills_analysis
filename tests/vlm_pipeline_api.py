@@ -120,6 +120,7 @@ def run_pipeline(
     run_date: str,
     results_dir: Path | None = None,
     results_path: Path | None = None,
+    max_pages: int = 4,
     dpi: int = 300,
     prompt: str = DEFAULT_PROMPT,
     model: str = "qwen3-vl:4b",
@@ -203,9 +204,9 @@ def run_pipeline(
         time_now, result_entry["preproc_time"] = calc_proc_time(start)
         print("完成前处理，耗时: %.2f 秒" % result_entry["preproc_time"])
         azure_result = None
-        if pdf_page_count is not None and pdf_page_count > 4:
-            print(f"[PDF] 页数 {pdf_page_count} > 4，跳过 Azure 解析。")
-            result_entry["skip_reason"] = "page_count>4"
+        if pdf_page_count is not None and pdf_page_count > max_pages:
+            print(f"[PDF] 页数 {pdf_page_count} > {max_pages}，跳过 Azure 解析。")
+            result_entry["skip_reason"] = f"page_count>{max_pages}"
         else:
             try:
                 azure_result = analyze_document_with_azure(str(pdf_path), model_id=model_id)
@@ -349,6 +350,13 @@ if __name__ == "__main__":
         print("必须提供至少一个 PDF 路径，或使用 --input-dir")
         raise SystemExit(1)
 
+    thresholds_path = Path(__file__).with_name("config.json")
+    max_pages = 4
+    if thresholds_path.exists():
+        try:
+            max_pages = int(json.loads(thresholds_path.read_text(encoding="utf-8")).get("max_pages", max_pages))
+        except Exception:
+            pass
     run_pipeline(
         inputs,
         output_root=ROOT_DIR / "outputs" / "vlm_pipeline",
@@ -356,5 +364,6 @@ if __name__ == "__main__":
         category=args.category,
         run_date=args.run_date,
         results_dir=args.results_dir,
+        max_pages=max_pages,
         dpi=300,
     )

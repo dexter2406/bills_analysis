@@ -39,6 +39,15 @@ def load_thresholds(path: Path) -> dict[str, Any]:
     return data
 
 
+def max_pages(thresholds: dict[str, Any], default: int = 4) -> int:
+    value = thresholds.get("max_pages", default)
+    try:
+        value = int(value)
+    except (TypeError, ValueError):
+        return default
+    return value
+
+
 def log_low_conf(item: dict[str, Any], thresholds: dict[str, Any]) -> None:
     result = item.get("result") or {}
     score = item.get("score") or {}
@@ -93,7 +102,7 @@ def main() -> None:
     path = args.json_path
     out_path = args.excel_path or path.with_suffix(".xlsx")
     items = load_results(path)
-    thresholds_path = Path(__file__).with_name("score_thresholds.json")
+    thresholds_path = Path(__file__).with_name("config.json")
     thresholds = load_thresholds(thresholds_path)
     for item in items:
         log_low_conf(item, thresholds)
@@ -105,7 +114,7 @@ def main() -> None:
         print(f"[WARN] Multiple dates found ({len(rows)}). Only the first row will be written.")
 
     first = rows[0]
-    # need review = (low confidence) OR (page_count > 4)
+    # need review = (low confidence) OR (page_count > max_pages)
     datum = first.get("Datum") or "UNKNOWN"
     need_review = bool(first.get("need review"))
     for item in items:
@@ -114,13 +123,13 @@ def main() -> None:
         if run_date != datum:
             continue
         page_count = item.get("page_count")
-        if isinstance(page_count, int) and page_count > 4:
+        if isinstance(page_count, int) and page_count > max_pages(thresholds):
             need_review = True
             break
     first["need review"] = need_review
     headers = list(first.keys())
 
-    thresholds = load_thresholds(Path(__file__).with_name("score_thresholds.json"))
+    thresholds = load_thresholds(Path(__file__).with_name("config.json"))
     orange_fill = PatternFill(start_color="FFA500", end_color="FFA500", fill_type="solid")
 
     wb = Workbook()
