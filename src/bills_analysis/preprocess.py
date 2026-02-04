@@ -233,7 +233,9 @@ def compress_image_only_pdf(
         preprocess_image(
             src,
             dest,
-            max_side=800,
+            max_side=2000,
+            sharpen=True,
+            sharpen_amount=0.3,
             autocontrast=False,
             denoise=False,
             binarize=False,

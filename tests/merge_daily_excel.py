@@ -28,6 +28,8 @@ def load_single_row(path: Path) -> tuple[list[str], list[Any]]:
     headers = [cell.value for cell in ws[1]]
     if ws.max_row < 2:
         raise ValueError("Validated Excel must contain exactly one data row.")
+    if ws.max_row > 2:
+        print(f"[WARN] Validated Excel has {ws.max_row - 1} data rows; only the first will be used.")
     row_values = [cell.value for cell in ws[2]]
     return [str(h).strip() if h is not None else "" for h in headers], row_values
 

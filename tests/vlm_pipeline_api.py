@@ -212,20 +212,29 @@ def run_pipeline(
             score_kv["total_tax"] = azure_result.get("confidence_total_tax")
         print(f"extracted_kv: {extracted_kv}")
         print("开始压缩备份PDF...")
-        compressed_pdf = compress_image_only_pdf(
-            pdf_path,
-            dest_dir=backup_dest_dir,
-            dpi=dpi,
-        )
-        new_name = get_compressed_pdf_name(purpose, extracted_kv)
+        final_pdf = None
+        try:
+            compressed_pdf = compress_image_only_pdf(
+                pdf_path,
+                dest_dir=backup_dest_dir,
+                dpi=dpi,
+            )
+            final_pdf = compressed_pdf
+            new_name = get_compressed_pdf_name(purpose, extracted_kv)
 
-        if new_name:
-            target = compressed_pdf.parent / new_name
-            if target.exists():
-                print(f"备份文件名已存在，保留原名: {compressed_pdf.name}")
-            else:
-                compressed_pdf.rename(target)
-                print(f"备份文件已重命名: {target.name}")
+            if new_name:
+                target = compressed_pdf.parent / new_name
+                if target.exists():
+                    print(f"备份文件名已存在，保留原名: {compressed_pdf.name}")
+                else:
+                    compressed_pdf.rename(target)
+                    final_pdf = target
+                    print(f"备份文件已重命名: {target.name}")
+        except Exception as exc:
+            print(f"[WARN] 压缩备份PDF失败: {exc}")
+            final_pdf = None
+        if final_pdf is not None:
+            result_entry["preview_path"] = str(final_pdf)
         print(f"=== 完成处理PDF: {pdf_path} ===\n")
         result_entry["proc_time"] = time.perf_counter() - start
         return result_entry
@@ -320,5 +329,5 @@ if __name__ == "__main__":
         category=args.category,
         run_date=args.run_date,
         results_dir=args.results_dir,
-        dpi=150,
+        dpi=300,
     )

@@ -45,7 +45,7 @@ def _run_category(
         run_date=run_date,
         results_dir=results_dir,
         results_path=results_path,
-        dpi=150,
+        dpi=300,
     )
 
 

@@ -60,6 +60,23 @@ def log_low_conf(item: dict[str, Any], thresholds: dict[str, Any]) -> None:
         )
 
 
+def to_link(value: Any, base_dir: Path) -> str | None:
+    if value is None:
+        return None
+    text = str(value).strip()
+    if not text:
+        return None
+    if text.startswith("http://") or text.startswith("https://"):
+        return text
+    path = Path(text)
+    if not path.is_absolute():
+        path = (base_dir / path).resolve()
+    try:
+        return path.as_uri()
+    except ValueError:
+        return str(path)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="Map results JSON to a one-row Excel file."
@@ -146,6 +163,29 @@ def main() -> None:
         col = header_to_col.get("需要校验")
         if col is not None:
             ws.cell(row=data_row_idx, column=col).fill = orange_fill
+
+    # Add preview links under Ausgabe N Name
+    preview_map = {}
+    for item in items:
+        filename = str(item.get("filename") or "")
+        preview_path = item.get("preview_path")
+        if filename:
+            preview_map[filename] = preview_path
+    link_row_idx = data_row_idx + 1
+    beleg_files = beleg_files_by_date.get(datum, [])
+    for idx, fname in enumerate(beleg_files, start=1):
+        if idx > 5:
+            break
+        preview = preview_map.get(fname)
+        link = to_link(preview, path.parent) if preview else None
+        if not link:
+            continue
+        col = header_to_col.get(f"Ausgabe {idx} Name")
+        if col is None:
+            continue
+        cell = ws.cell(row=link_row_idx, column=col)
+        cell.value = "查看"
+        cell.hyperlink = link
 
     wb.save(out_path)
     print(f"[Excel] Written: {out_path}")
