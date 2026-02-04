@@ -13,23 +13,8 @@ import requests
 from .contracts import FieldCandidate, PageInfo
 
 
-fields_beleg = ["brutto", "netto", "store_name", "total_tax", "run_date"]
 fields_zbon = ["brutto", "netto", "store_name", "total_tax", "run_date"]
-
-prompt_beleg = f"""
-You are an expert invoice and receipt parser.
-
-Return ONLY valid JSON with exactly these keys:
-{fields_beleg}
-
-Rules:
-- Monetary values must be strings using comma or dot as in the document (e.g. "9,98" or "9.98").
-- run_date must be ISO format (YYYY-MM-DD) if present.
-- If a value is unknown, use an empty string "".
-
-Example:
-{{"brutto":"8,94","netto":"8,36","store_name":"REWE","total_tax":"0,58","run_date":"2025-08-15"}}
-"""
+fields_bar = ["brutto", "netto", "store_name", "total_tax", "run_date"]
 
 prompt_zbon = f"""
 You are an expert receipt parser.
@@ -47,12 +32,27 @@ Example:
 {{"brutto":"1234.56","netto":"987.65","store_name":"REWE","total_tax":"246.91","run_date":"2025-08-15"}}
 """
 
+prompt_bar = f"""
+You are an expert invoice and receipt parser.
+
+Return ONLY valid JSON with exactly these keys:
+{fields_bar}
+
+Rules:
+- Monetary values must be strings using comma or dot as in the document (e.g. "9,98" or "9.98").
+- run_date must be ISO format (YYYY-MM-DD) if present.
+- If a value is unknown, use an empty string "".
+
+Example:
+{{"brutto":"8,94","netto":"8,36","store_name":"REWE","total_tax":"0,58","run_date":"2025-08-15"}}
+"""
+
 prompts_dict = {
-    "beleg": {"fields": fields_beleg, "prompt": prompt_beleg},
     "zbon": {"fields": fields_zbon, "prompt": prompt_zbon},
+    "bar": {"fields": fields_bar, "prompt": prompt_bar},
 }
 
-DEFAULT_PROMPT = prompt_beleg
+DEFAULT_PROMPT = prompt_bar
 
 def _encode_image(path: Path) -> str:
     return base64.b64encode(path.read_bytes()).decode("utf-8")

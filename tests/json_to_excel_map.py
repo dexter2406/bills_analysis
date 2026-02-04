@@ -97,7 +97,7 @@ def main() -> None:
     thresholds = load_thresholds(thresholds_path)
     for item in items:
         log_low_conf(item, thresholds)
-    rows, beleg_files_by_date = build_rows_with_meta(items, thresholds)
+    rows, zbon_files_by_date = build_rows_with_meta(items, thresholds)
     if not rows:
         print("No rows generated.")
         raise SystemExit(1)
@@ -136,9 +136,9 @@ def main() -> None:
             low_headers.add("Umsatz Brutto")
         if "netto" in low_fields:
             low_headers.add("Umsatz Netto")
-    # Beleg items by slot
-    beleg_files = beleg_files_by_date.get(datum, [])
-    for idx, fname in enumerate(beleg_files, start=1):
+    # ZBon items by slot
+    zbon_files = zbon_files_by_date.get(datum, [])
+    for idx, fname in enumerate(zbon_files, start=1):
         for item in items:
             if str(item.get("filename") or "") != fname:
                 continue
@@ -172,8 +172,8 @@ def main() -> None:
         if filename:
             preview_map[filename] = preview_path
     link_row_idx = data_row_idx + 1
-    beleg_files = beleg_files_by_date.get(datum, [])
-    for idx, fname in enumerate(beleg_files, start=1):
+    zbon_files = zbon_files_by_date.get(datum, [])
+    for idx, fname in enumerate(zbon_files, start=1):
         if idx > 5:
             break
         preview = preview_map.get(fname)

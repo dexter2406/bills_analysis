@@ -51,7 +51,7 @@ def test_vlm(image_path, prompt, model_name="qwen3-vl:4b"):
 
 
 # 运行测试
-prompt_beleg = """
+prompt_zbon = """
     You are an expert invoice parser. Analyze this receipt and return JSON with: 
     1) Brutto and Netto. Notice that Brutto may be represented by the name Tagesumsatz; 
     2) two confidence scores called score_brutto and score_netto, if the keyword doesn't exist, return -1, if it exists but the result is uncertain, return 0, if it is certain, return 1;
@@ -80,7 +80,7 @@ prompt_zbon = """
 """
 
 pic_path = rf"outputs\run1\preproc\page_01.preproc.png"
-test_vlm(pic_path, prompt_beleg)
+test_vlm(pic_path, prompt_zbon)
 
 pic_path = rf"D:\CodeSpace\prj_rechnung\rsc\2510DO Z-Bon\2510DO Z-Bon\pngs\06_10_2025 do\preproc\page_01.preproc.png"
 test_vlm(pic_path, prompt_zbon)

@@ -51,12 +51,12 @@ def _run_category(
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Run pipeline for BAR and Beleg in one run and merge into one JSON."
+        description="Run pipeline for BAR and ZBon in one run and merge into one JSON."
     )
     parser.add_argument("--bar", nargs="*", default=[], help="BAR PDF file paths")
-    parser.add_argument("--beleg", nargs="*", default=[], help="Beleg PDF file paths")
+    parser.add_argument("--zbon", nargs="*", default=[], help="ZBon PDF file paths")
     parser.add_argument("--bar-dir", type=Path, help="Directory containing BAR PDFs")
-    parser.add_argument("--beleg-dir", type=Path, help="Directory containing Beleg PDFs")
+    parser.add_argument("--zbon-dir", type=Path, help="Directory containing ZBon PDFs")
     parser.add_argument(
         "--dest-dir",
         dest="backup_dest_dir",
@@ -79,10 +79,10 @@ def main() -> None:
     args = parser.parse_args()
 
     bar_pdfs = _collect_pdfs(args.bar, args.bar_dir)
-    beleg_pdfs = _collect_pdfs(args.beleg, args.beleg_dir)
+    zbon_pdfs = _collect_pdfs(args.zbon, args.zbon_dir)
 
-    if not bar_pdfs and not beleg_pdfs:
-        print("必须提供 BAR 或 Beleg 的 PDF（或目录）。")
+    if not bar_pdfs and not zbon_pdfs:
+        print("必须提供 BAR 或 ZBon 的 PDF（或目录）。")
         raise SystemExit(1)
 
     output_root = ROOT_DIR / "outputs" / "vlm_pipeline"
@@ -100,8 +100,8 @@ def main() -> None:
         results_path=results_path,
     )
     _run_category(
-        "Beleg",
-        beleg_pdfs,
+        "ZBon",
+        zbon_pdfs,
         output_root=output_root,
         backup_dest_dir=args.backup_dest_dir,
         run_date=args.run_date,

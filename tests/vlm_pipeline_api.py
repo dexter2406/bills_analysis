@@ -23,8 +23,8 @@ from bills_analysis.extract_by_azure_api import analyze_document_with_azure
 
 
 crop_y_dict = {
-    'beleg': (0, 0.8),
-    'zbon': (0.3, 0.6),
+    'zbon': (0, 0.8),
+    'bar': (0.3, 0.6),
 }
 THRESHOLD_RECEIPT_RATIO = 2.0
 THRESHOLD_CONFIDENCE = 0.8
@@ -70,8 +70,29 @@ def to_grayscale(
     )
 
 
-def get_compressed_pdf_name(purpose: str, extracted_kv: dict) -> str | None:
-    if purpose == "beleg":
+def get_archive_subdir_name(run_date: str, category: str) -> str:
+    try:
+        dt = datetime.strptime(run_date, "%d/%m/%Y")
+        yymm = f"{dt.year % 100:02d}{dt.month:02d}"
+    except ValueError:
+        yymm = "0000"
+    cat = category.strip().lower()
+    if cat == "zbon":
+        return f"{yymm}DO Bar Ausgabe"
+    if cat == "bar":
+        return f"{yymm}DO Z-Bon"
+    return f"{yymm}DO {category}"
+
+
+def get_compressed_pdf_name(category: str, extracted_kv: dict, run_date: str) -> str | None:
+    cat = category.strip().lower()
+    if cat == "zbon":
+        try:
+            dt = datetime.strptime(run_date, "%d/%m/%Y")
+            return f"{dt.day:02d}_{dt.month:02d}_{dt.year} do.pdf"
+        except ValueError:
+            return None
+    if cat == "bar":
         store_name = extracted_kv.get("store_name") or ""
         brutto = extracted_kv.get("brutto") or ""
         brutto_norm = str(brutto).strip().replace(",", ".")
@@ -84,9 +105,6 @@ def get_compressed_pdf_name(purpose: str, extracted_kv: dict) -> str | None:
         if safe_store:
             return f"{safe_store} {int_part}_{frac_part}.pdf"
         return None
-    if purpose == "zbon":
-        today = datetime.now()
-        return f"{today.day:02d}_{today.month:02d}_{today.year}.pdf"
     return None
 
 
@@ -102,7 +120,7 @@ def run_pipeline(
     dpi: int = 300,
     prompt: str = DEFAULT_PROMPT,
     model: str = "qwen3-vl:4b",
-    purpose="beleg",
+    purpose="zbon",
 ) -> None:
     timestamp = int(datetime.now().timestamp())
     if results_dir is None:
@@ -212,15 +230,16 @@ def run_pipeline(
             score_kv["total_tax"] = azure_result.get("confidence_total_tax")
         print(f"extracted_kv: {extracted_kv}")
         print("开始压缩备份PDF...")
+        archive_dir = backup_dest_dir / get_archive_subdir_name(run_date, category)
         final_pdf = None
         try:
             compressed_pdf = compress_image_only_pdf(
                 pdf_path,
-                dest_dir=backup_dest_dir,
+                dest_dir=archive_dir,
                 dpi=dpi,
             )
             final_pdf = compressed_pdf
-            new_name = get_compressed_pdf_name(purpose, extracted_kv)
+            new_name = get_compressed_pdf_name(category, extracted_kv, run_date)
 
             if new_name:
                 target = compressed_pdf.parent / new_name
@@ -294,7 +313,7 @@ if __name__ == "__main__":
         "--cat",
         dest="category",
         required=True,
-        help="Category name (e.g., BAR, Beleg)",
+        help="Category name (e.g., BAR, ZBon)",
     )
     parser.add_argument(
         "--run_date",

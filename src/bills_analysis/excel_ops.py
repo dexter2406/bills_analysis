@@ -147,10 +147,10 @@ def compute_low_headers(
     thresholds: dict[str, Any],
     datum: str,
     *,
-    max_beleg: int = 5,
+    max_zbon: int = 5,
 ) -> set[str]:
     low_headers: set[str] = set()
-    beleg_idx = 0
+    zbon_idx = 0
     for item in items:
         result = item.get("result") or {}
         score = item.get("score") or {}
@@ -166,16 +166,16 @@ def compute_low_headers(
                 low_headers.add("Umsatz Brutto")
             if "netto" in low_fields:
                 low_headers.add("Umsatz Netto")
-        elif category == "beleg":
-            beleg_idx += 1
-            if beleg_idx > max_beleg:
+        elif category == "zbon":
+            zbon_idx += 1
+            if zbon_idx > max_zbon:
                 continue
             if "store_name" in low_fields:
-                low_headers.add(f"Ausgabe {beleg_idx} Name")
+                low_headers.add(f"Ausgabe {zbon_idx} Name")
             if "brutto" in low_fields:
-                low_headers.add(f"Ausgabe {beleg_idx} Brutto")
+                low_headers.add(f"Ausgabe {zbon_idx} Brutto")
             if "netto" in low_fields:
-                low_headers.add(f"Ausgabe {beleg_idx} Netto")
+                low_headers.add(f"Ausgabe {zbon_idx} Netto")
     return low_headers
 
 
@@ -183,10 +183,10 @@ def build_rows_with_meta(
     items: list[dict[str, Any]],
     thresholds: dict[str, Any],
     *,
-    max_beleg: int = 5,
+    max_zbon: int = 5,
 ) -> tuple[list[dict[str, Any]], dict[str, list[str]]]:
     rows: dict[str, dict[str, Any]] = {}
-    beleg_files_by_date: dict[str, list[str]] = {}
+    zbon_files_by_date: dict[str, list[str]] = {}
 
     for item in items:
         category = str(item.get("category") or "").strip().lower()
@@ -202,11 +202,11 @@ def build_rows_with_meta(
                 "Umsatz Netto": None,
                 "需要校验": False,
                 "Wie viel Rechnungen": 0,
-                "_beleg_count": 0,
+                "_zbon_count": 0,
                 "Ausgaben": [],
             }
             rows[run_date] = row
-            beleg_files_by_date.setdefault(run_date, [])
+            zbon_files_by_date.setdefault(run_date, [])
 
         brutto = to_float(result.get("brutto"))
         netto = to_float(result.get("netto"))
@@ -215,14 +215,14 @@ def build_rows_with_meta(
         if category == "bar":
             row["Umsatz Brutto"] = brutto
             row["Umsatz Netto"] = netto
-        elif category == "beleg":
-            row["_beleg_count"] += 1
-            if len(row["Ausgaben"]) < max_beleg:
+        elif category == "zbon":
+            row["_zbon_count"] += 1
+            if len(row["Ausgaben"]) < max_zbon:
                 row["Ausgaben"].append(
                     {"Name": store, "Brutto": brutto, "Netto": netto}
                 )
-                beleg_files_by_date[run_date].append(str(item.get("filename") or ""))
-            row["Wie viel Rechnungen"] = row["_beleg_count"]
+                zbon_files_by_date[run_date].append(str(item.get("filename") or ""))
+            row["Wie viel Rechnungen"] = row["_zbon_count"]
 
         if needs_review(result, score, thresholds):
             row["需要校验"] = True
@@ -236,7 +236,7 @@ def build_rows_with_meta(
             "需要校验": row["需要校验"],
             "Wie viel Rechnungen": row["Wie viel Rechnungen"],
         }
-        for idx in range(max_beleg):
+        for idx in range(max_zbon):
             key_base = f"Ausgabe {idx + 1}"
             if idx < len(row["Ausgaben"]):
                 item = row["Ausgaben"][idx]
@@ -249,16 +249,16 @@ def build_rows_with_meta(
                 out[f"{key_base} Netto"] = None
         output_rows.append(out)
 
-    return output_rows, beleg_files_by_date
+    return output_rows, zbon_files_by_date
 
 
 def build_rows(
     items: list[dict[str, Any]],
     thresholds: dict[str, Any],
     *,
-    max_beleg: int = 5,
+    max_zbon: int = 5,
 ) -> list[dict[str, Any]]:
-    rows, _ = build_rows_with_meta(items, thresholds, max_beleg=max_beleg)
+    rows, _ = build_rows_with_meta(items, thresholds, max_zbon=max_zbon)
     return rows
 
 
