@@ -98,6 +98,7 @@ def run_pipeline(
     category: str,
     run_date: str,
     results_dir: Path | None = None,
+    results_path: Path | None = None,
     dpi: int = 300,
     prompt: str = DEFAULT_PROMPT,
     model: str = "qwen3-vl:4b",
@@ -110,7 +111,8 @@ def run_pipeline(
         print(f"--out_dir 不能是文件: {results_dir}")
         raise SystemExit(1)
     results_dir.mkdir(parents=True, exist_ok=True)
-    results_path = results_dir / f"results_{timestamp}.json"
+    if results_path is None:
+        results_path = results_dir / f"results_{timestamp}.json"
 
     def _write_results(entry: dict[str, object]) -> None:
         print(f"results_path: {results_path}")

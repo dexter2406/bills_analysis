@@ -1,13 +1,14 @@
 from __future__ import annotations
 
+import argparse
 import json
 import re
-import sys
 from collections import OrderedDict
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from openpyxl import Workbook
 
 def _load_results(path: Path) -> list[dict[str, Any]]:
     raw = path.read_text(encoding="utf-8").strip()
@@ -136,12 +137,38 @@ def build_rows(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 
 def main() -> None:
-    if len(sys.argv) < 2:
-        print("Usage: python tests/json_to_excel_map.py <results.json>")
-        raise SystemExit(1)
-    path = Path(sys.argv[1])
+    parser = argparse.ArgumentParser(
+        description="Map results JSON to a one-row Excel file."
+    )
+    parser.add_argument("json_path", type=Path, help="Path to results JSON")
+    parser.add_argument(
+        "excel_path",
+        type=Path,
+        nargs="?",
+        help="Output Excel path (default: same dir/name as JSON)",
+    )
+    args = parser.parse_args()
+
+    path = args.json_path
+    out_path = args.excel_path or path.with_suffix(".xlsx")
     items = _load_results(path)
     rows = build_rows(items)
+    if not rows:
+        print("No rows generated.")
+        raise SystemExit(1)
+    if len(rows) > 1:
+        print(f"[WARN] Multiple dates found ({len(rows)}). Only the first row will be written.")
+
+    first = rows[0]
+    headers = list(first.keys())
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Results"
+    ws.append(headers)
+    ws.append([first.get(h) for h in headers])
+    wb.save(out_path)
+    print(f"[Excel] Written: {out_path}")
     print(json.dumps(rows, ensure_ascii=False, indent=2))
 
 
