@@ -13,8 +13,8 @@ import requests
 from .contracts import FieldCandidate, PageInfo
 
 
-fields_beleg = ["brutto", "netto", "store_name", "run_date"]
-fields_zbon = ["brutto", "netto", "store_name", "run_date"]
+fields_beleg = ["brutto", "netto", "store_name", "total_tax", "run_date"]
+fields_zbon = ["brutto", "netto", "store_name", "total_tax", "run_date"]
 
 prompt_beleg = f"""
 You are an expert invoice and receipt parser.
@@ -28,7 +28,7 @@ Rules:
 - If a value is unknown, use an empty string "".
 
 Example:
-{{"brutto":"8,94","netto":"8,36","store_name":"REWE","run_date":"2025-08-15"}}
+{{"brutto":"8,94","netto":"8,36","store_name":"REWE","total_tax":"0,58","run_date":"2025-08-15"}}
 """
 
 prompt_zbon = f"""
@@ -44,7 +44,7 @@ Rules:
 - If a value is unknown, use an empty string "".
 
 Example:
-{{"brutto":"1234.56","netto":"987.65","store_name":"REWE","run_date":"2025-08-15"}}
+{{"brutto":"1234.56","netto":"987.65","store_name":"REWE","total_tax":"246.91","run_date":"2025-08-15"}}
 """
 
 prompts_dict = {

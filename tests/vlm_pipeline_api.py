@@ -201,6 +201,7 @@ def run_pipeline(
                 "brutto": azure_result.get("brutto"),
                 "netto": azure_result.get("netto"),
                 "store_name": store_name[0].upper() + store_name[1:],
+                "total_tax": azure_result.get("total_tax"),
             }
             for key, value in value_map.items():
                 if key in extracted_kv and value not in (None, "", "None"):
@@ -208,6 +209,7 @@ def run_pipeline(
             score_kv["brutto"] = azure_result.get("confidence_brutto")
             score_kv["netto"] = azure_result.get("confidence_netto")
             score_kv["store_name"] = azure_result.get("confidence_store_name")
+            score_kv["total_tax"] = azure_result.get("confidence_total_tax")
         print(f"extracted_kv: {extracted_kv}")
         print("开始压缩备份PDF...")
         compressed_pdf = compress_image_only_pdf(

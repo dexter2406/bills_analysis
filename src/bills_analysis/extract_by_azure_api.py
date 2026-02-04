@@ -11,7 +11,7 @@ load_dotenv()
 def analyze_document_with_azure(image_path: str, model_id: str = "prebuilt-invoice"):
     """
     通用分析函数：支持指定使用 invoice 或 receipt 模型
-    提取：brutto, netto, store_name, run_date + 对应 confidence
+    提取：brutto, netto, store_name, total_tax, run_date + 对应 confidence
     如果是 invoice 模型提取，则额外提取 invoice_id
     """
     endpoint = os.getenv("AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT")
@@ -46,6 +46,8 @@ def analyze_document_with_azure(image_path: str, model_id: str = "prebuilt-invoi
         "confidence_store_name": None,
         "brutto": None,
         "confidence_brutto": None,
+        "total_tax": None,
+        "confidence_total_tax": None,
         "netto": None,
         "confidence_netto": None,
         "invoice_id": None
@@ -82,12 +84,14 @@ def analyze_document_with_azure(image_path: str, model_id: str = "prebuilt-invoi
             extracted_data["confidence_netto"] = f_subtotal.confidence
             print(f"[Azure] subtotal={extracted_data['netto']} conf={extracted_data['confidence_netto']}")
 
-        # 4. 用 TotalTax 兜底推断 brutto 或 netto（避免使用 TaxRate）
+        # 4. TotalTax 提取（同时作为 brutto/netto 兜底）
         if extracted_data["brutto"] is None or extracted_data["netto"] is None:
             f_total_tax = fields.get("TotalTax")
             total_tax = None
             if f_total_tax:
                 total_tax = f_total_tax.value_currency.amount if f_total_tax.value_currency else f_total_tax.value_number
+                extracted_data["total_tax"] = total_tax
+                extracted_data["confidence_total_tax"] = f_total_tax.confidence
             if total_tax is not None:
                 print(f"[Azure] TotalTax={total_tax} used for fallback")
                 if extracted_data["brutto"] is None and extracted_data["netto"] is not None:
@@ -98,6 +102,15 @@ def analyze_document_with_azure(image_path: str, model_id: str = "prebuilt-invoi
                     extracted_data["confidence_netto"] = -1
             else:
                 print("[Azure] TotalTax missing; cannot infer brutto/netto")
+        else:
+            f_total_tax = fields.get("TotalTax")
+            if f_total_tax:
+                extracted_data["total_tax"] = (
+                    f_total_tax.value_currency.amount
+                    if f_total_tax.value_currency
+                    else f_total_tax.value_number
+                )
+                extracted_data["confidence_total_tax"] = f_total_tax.confidence
 
         # 5. Invoice ID (仅限 Invoice 模型)
         if model_id == "prebuilt-invoice":
