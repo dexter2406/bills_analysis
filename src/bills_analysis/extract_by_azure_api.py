@@ -3,13 +3,46 @@
 import json
 import os
 from dotenv import load_dotenv
+from openai import AzureOpenAI
 from azure.core.credentials import AzureKeyCredential
 from azure.ai.documentintelligence import DocumentIntelligenceClient
 from azure.ai.documentintelligence.models import AnalyzeDocumentRequest
 
 
+def _field_to_dict(field) -> dict:
+    if field is None:
+        return {}
+    if hasattr(field, "as_dict"):
+        try:
+            return field.as_dict()
+        except Exception:
+            pass
+    payload = {}
+    for attr in [
+        "type",
+        "content",
+        "value_string",
+        "value_number",
+        "value_currency",
+        "value_date",
+        "value_address",
+        "value_array",
+        "value_object",
+    ]:
+        val = getattr(field, attr, None)
+        if val is not None:
+            payload[attr] = val
+    return payload
+
+
+def _fields_to_dict(fields: dict) -> dict:
+    if not isinstance(fields, dict):
+        return {}
+    return {k: _field_to_dict(v) for k, v in fields.items()}
+
+
 def _extract_amount(field) -> float | None:
-    print([f"Extracting amount from field: {field}"])
+    # print([f"Extracting amount from field: {field}"])
     if not field:
         return None
     if getattr(field, "value_currency", None):
@@ -45,27 +78,56 @@ def _extract_amount(field) -> float | None:
 
 load_dotenv()
 
-def analyze_document_with_azure(image_path: str, model_id: str = "prebuilt-invoice"):
+_DI_CLIENT: DocumentIntelligenceClient | None = None
+_AOAI_CLIENT: AzureOpenAI | None = None
+
+
+def _get_di_client() -> DocumentIntelligenceClient:
+    global _DI_CLIENT
+    endpoint = os.getenv("AZURE_DI_ENDPOINT")
+    key = os.getenv("AZURE_DI_KEY")
+    if not endpoint or not key:
+        raise ValueError("请在环境变量中设置 AZURE_DI_ENDPOINT 和 AZURE_DI_KEY")
+    if _DI_CLIENT is None:
+        _DI_CLIENT = DocumentIntelligenceClient(
+            endpoint=endpoint,
+            credential=AzureKeyCredential(key),
+            api_version="2024-11-30",
+        )
+        print("[Azure] client created")
+    return _DI_CLIENT
+
+
+def _get_aoai_client() -> AzureOpenAI:
+    global _AOAI_CLIENT
+    endpoint = os.getenv("AZURE_OPENAI_ENDPOINT")
+    key = os.getenv("AZURE_OPENAI_KEY")
+    if not endpoint or not key:
+        raise ValueError("请在环境变量中设置 AZURE_OPENAI_ENDPOINT 和 AZURE_OPENAI_KEY")
+    if _AOAI_CLIENT is None:
+        _AOAI_CLIENT = AzureOpenAI(
+            azure_endpoint=endpoint,
+            api_key=key,
+            api_version="2025-01-01-preview",
+        )
+        print("[AzureOpenAI] client created")
+    return _AOAI_CLIENT
+
+def analyze_document_with_azure(
+    image_path: str,
+    model_id: str = "prebuilt-invoice",
+    *,
+    return_fields: bool = False,
+):
     """
     通用分析函数：支持指定使用 invoice 或 receipt 模型
     提取：brutto, netto, store_name, total_tax, run_date + 对应 confidence
     如果是 invoice 模型提取，则额外提取 invoice_id
     """
-    endpoint = os.getenv("AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT")
-    key = os.getenv("AZURE_DOCUMENT_INTELLIGENCE_KEY")
     print(f"[Azure] model_id={model_id}")   # "prebuilt-invoice" / "prebuilt-receipt"
     print(f"[Azure] image_path={image_path}")
     # print(f"[Azure] endpoint_set={bool(endpoint)} key_set={bool(key)}")
-
-    if not endpoint or not key:
-        raise ValueError("请在环境变量中设置 AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT 和 KEY")
-
-    client = DocumentIntelligenceClient(
-        endpoint=endpoint, 
-        credential=AzureKeyCredential(key),
-        api_version="2024-11-30"
-        )
-    print("[Azure] client created")
+    client = _get_di_client()
 
     # 读取本地文件为字节流
     with open(image_path, "rb") as f:
@@ -79,7 +141,7 @@ def analyze_document_with_azure(image_path: str, model_id: str = "prebuilt-invoi
         AnalyzeDocumentRequest(bytes_source=file_content)
     )
     result = poller.result()
-    print(json.dumps(result.as_dict(), indent=2))
+    # print(json.dumps(result.as_dict(), indent=2))
     print(f"[Azure] Finished documents_count={len(result.documents) if result.documents else 0}")
 
     extracted_data = {
@@ -92,12 +154,15 @@ def analyze_document_with_azure(image_path: str, model_id: str = "prebuilt-invoi
         "confidence_total_tax": None,
         "netto": None,
         "confidence_netto": None,
-        "invoice_id": None
+        "invoice_id": None,
+        "confidence_invoice_id": None
     }
 
+    fields_dict = {}
     if result.documents:
         doc = result.documents[0]
         fields = doc.fields
+        fields_dict = _fields_to_dict(fields)
         # print(fields)
         print(f"[Azure] fields keys: {list(fields.keys())}")
         # 1. Store Name 提取
@@ -125,7 +190,7 @@ def analyze_document_with_azure(image_path: str, model_id: str = "prebuilt-invoi
 
         # 3. Netto (净额) 提取
         # 官方文档显示两者均对应 Subtotal 字段
-        f_subtotal = fields.get("Subtotal")
+        f_subtotal = fields.get("Subtotal") or fields.get("SubTotal")
         if f_subtotal:
             extracted_data["netto"] = _extract_amount(f_subtotal)
             extracted_data["confidence_netto"] = f_subtotal.confidence
@@ -161,15 +226,159 @@ def analyze_document_with_azure(image_path: str, model_id: str = "prebuilt-invoi
 
         # 5. Invoice ID (仅限 Invoice 模型)
         if model_id == "prebuilt-invoice":
-            f_inv_id = fields.get("InvoiceId")
-            extracted_data["invoice_id"] = f_inv_id.value_string if f_inv_id else None
+            f_inv_id = fields.get("VendorTaxId")
+            extracted_data["invoice_id"] = f_inv_id.value_string.replace(" ", "") if f_inv_id else None
+            extracted_data["confidence_invoice_id"] = f_inv_id.confidence if f_inv_id else None
 
     print(f"[Azure] extracted_data for this page:\n{extracted_data}")
+    if return_fields:
+        return extracted_data, fields_dict
     return extracted_data
+
+
+def clean_invoice_json(data):
+    """
+    递归清理 Azure DI 返回的 JSON，仅保留核心业务字段。
+    """
+    if isinstance(data, dict):
+        # 定义需要保留的关键字段
+        # 我们可以保留 type 来帮助 GPT 理解数据格式
+        cleaned = {}
+        for k, v in data.items():
+            # 跳过冗余的视觉和位置信息
+            if k in ['boundingRegions', 'polygon', 'spans', 'confidence']:
+                continue
+            
+            # 递归处理内容
+            res = clean_invoice_json(v)
+            if res is not None:
+                cleaned[k] = res
+        return cleaned
+    
+    elif isinstance(data, list):
+        return [clean_invoice_json(item) for item in data]
+    
+    else:
+        # 返回基础类型数据 (str, int, float, bool)
+        return data
+
+def test_clean_invoice_json():
+    # 使用示例
+    with open('tmp_invoice_3.json', 'r', encoding='utf-8') as f:
+        raw_data = json.load(f)
+
+    minimized_data = clean_invoice_json(raw_data)
+
+    # 打印对比结果
+    print(f"原始字符数: {len(json.dumps(raw_data))}")
+    print(f"清理后字符数: {len(json.dumps(minimized_data))}")
+
+    # 保存为精简版供 GPT 使用
+    with open('minimized_invoice.json', 'w', encoding='utf-8') as f:
+        json.dump(minimized_data, f, ensure_ascii=False)
+
+
+def test_analyze_receipt_with_azure():
+    img_path = rf"D:\CodeSpace\prj_rechnung\bills_analysis\data\samples\scanned\Metzgerei 105_13.pdf"
+    analyze_document_with_azure(img_path, model_id="prebuilt-receipt")
+
+
+def test_analyze_invoice_with_azure():
+    img_path = rf"D:\CodeSpace\prj_rechnung\test_data\b\Metro 195_56.pdf"
+    analyze_document_with_azure(img_path, model_id="prebuilt-invoice")
+
+
+def extract_office_invoice_azure(distilled_data: dict):
+    client = _get_aoai_client()
+    # print(f"[AzureOpenAI] Extracting office invoice category with distilled data: {distilled_data}")
+    prompt = """
+        ### Role
+        You are a professional financial assistant specializing in invoice data extraction and classification.
+
+        ### Task
+        Extract specific information from the provided invoice and output it in a strict JSON format.
+
+        ### Information to Extract
+        1. **purpose**: Classify the invoice into exactly ONE of the following allowed purpose.
+        2. **sender**: The name of the company issuing the invoice. 
+        - *Rule*: Remove legal suffixes like "GmbH", "AG", "e.K.", "Ltd",etc. (e.g., "Ramen lppin Europa GmbH" -> "Ramen lppin Europa").
+        3. **receiver**: The name of the company receiving the invoice (for verification).
+
+        ### OCR Correction Logic (General Rules)
+        Before processing, apply these logic rules to fix common OCR/DI artifacts:
+        - **Case Normalization**: In German business contexts, the first letter of each major word in a company name should be **Capitalized** (e.g., correct "ramen ippin" to "Ramen Ippin").
+        - **Character Confusion**: 
+            - Fix "l" (lowercase L) vs. "I" (uppercase i). If a word starts with "I/l" followed by lowercase letters, it is almost certainly an uppercase **"I"**.
+            - Fix "0" (zero) vs. "O" (letter O) in company names.
+            - Fix "ß" being recognized as "ll", "B", or "ss".
+        - **Scope**: The standard name can be a subset of a complete name, e.g. the rules to normalize "Ramen Ippin" also apply to "Ramen Ippin Dortmund", "Ramen Ippin Europa".
+        - **Contextual Healing**: If a word is very close to a known business term or a name in the list below, e.g., just one or two letters off or missing a space, normalize it to the standard version.
+
+        ### Standard Entity List As Examples
+        Check extracted names against this list. If a match or near-match is found, use the **Standard Name**:
+        - **Standard: "Ramen Ippin"** (Commonly misidentified as: "Ramen lppin", "Ramen 1ppin", "RamenIppin")
+        - **Standard: "Fujigawa"** (Commonly misidentified as: "Fuiigawa", "Fujigwa", "Fuijgawa")
+        - **Standard: "Asiatico"** (Commonly misidentified as: "Asiatco", "Asiatiko")
+        - **Standard: "JFC"** (Commonly misidentified as: "JFC Deutschland", "JFC Group")
+
+        ### Allowed Categories
+        - **asiatico**: Includes the exact keywords "Asiatco" or "King Fish", then directly classify as "asiatico".
+        - **Fuji**: Includes the exact keyword "Fuiigawa", then directly classify as "Fuji".
+        - **JFC**: If it includes the exact keyword "JFC", then directly classify as "JFC".
+        - **Ramenlppin Europa**: If it includes the exact keyword "Ramen lppin Europa", then directly classify as "Ramenlppin Europa". Notice: it must has the keyword "Europa", if it's just "Ramen Ippin Dortmund" then it is not this category.
+        - **Lebensmittel&Bedarf**: Main products are food items like meat, vegetables, etc.
+        - **Miete**
+        - **Strom&Gas&Internet**
+        - **Bar Ausgabe**
+        - **Personalkosten**
+        - **Gerät&Geschirr**
+        - **Reparatur**
+        - **Getränke**
+        - **Bank&SumUp&Linzen**
+        - **Service&Andere**: "Service" correspinds to general stuff for daily business running, e.g. products like pens, or services like cleaning. "Andere" corresponds to unsual or trivial stuff that cannot be precisely determined.
+        - **Unternehmen**: Company registration, tax consulting, legal services, etc.
+
+        ### Rules
+        - **OCR Correction**: Prioritize the "Known Entities" list. If an extracted name looks like a misspelling of a known entity, use the **Standard** version.
+        - The special purposes, asiatico, Fuji, JFC, Ramenlppin Europa, are specific vendor names relating to food-chain, having the highest priority. If any of these keywords are found, classify accordingly without further analysis.
+        - Other normal purposes, if it is also about food, but does not contain the above keywords, classify as "Lebensmittel&Bedarf".
+        - If the purpose is ambiguous, use common sense based on the merchant name.
+        - If impossible to determine the purpose, use "Service&Andere".
+        - Output MUST be a valid JSON object.
+
+        ### Output Format
+        {
+        "purpose": "<ONE_OF_ALLOWED_PURPOSES>",
+        "sender": "<EXTRACTED_SENDER_NAME>",
+        "receiver": "<EXTRACTED_RECEIVER_NAME>"
+        }
+    """
+
+    response = client.chat.completions.create(
+        model="gpt-4o-mini", # 这里填你的 Deployment Name
+        messages=[
+            {"role": "user", "content": prompt},
+            {"role": "user", "content": f"Do classify: {json.dumps(distilled_data)}"}
+        ],
+        response_format={"type": "json_object"},
+        temperature=0.0,
+    )
+    content = response.choices[0].message.content or "{}"
+
+    try:
+        return json.loads(content)
+    except json.JSONDecodeError:
+        return {}
+
+def test_extract_office_invoice_azure():
+    with open('minimized_invoice.json', 'r', encoding='utf-8') as f:
+        distilled_data = json.load(f)
+    category = extract_office_invoice_azure(distilled_data)
+    print(f"office category: {category}")
 
 if __name__ == "__main__":  
 
-    img_path = rf"D:\CodeSpace\prj_rechnung\bills_analysis\data\samples\scanned\bad_case\Nanjing 20_23.pdf"
-    analyze_document_with_azure(img_path, model_id="prebuilt-invoice")
-    # img_path = rf"D:\CodeSpace\prj_rechnung\bills_analysis\data\samples\scanned\Metzgerei 105_13.pdf"
-    # analyze_document_with_azure(img_path, model_id="prebuilt-receipt")
+    # test_clean_invoice_json()
+    test_extract_office_invoice_azure()
+    # classify_invoice_azure()
+    # test_analyze_invoice_with_azure()

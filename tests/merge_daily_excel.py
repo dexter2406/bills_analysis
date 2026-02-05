@@ -10,8 +10,9 @@ from openpyxl import load_workbook
 
 from bills_analysis.excel_ops import (
     merge_validated_row,
-    normalize_datum_value,
+    normalize_date,
     normalize_header,
+    write_datum_cell,
 )
 
 def cell_has_value(value: Any) -> bool:
@@ -35,46 +36,38 @@ def load_single_row(path: Path) -> tuple[list[str], list[Any]]:
 
 
 def find_row_by_datum(ws, datum: str) -> int | None:
-    target = normalize_datum_value(datum)
+    target = normalize_date(datum) or str(datum).strip()
     for row_idx in range(2, ws.max_row + 1):
         cell_value = ws.cell(row=row_idx, column=1).value
-        cell_text = normalize_datum_value(cell_value)
+        cell_text = normalize_date(cell_value) or str(cell_value).strip()
         if cell_text == target:
             return row_idx
     return None
 
 
-def main() -> None:
-    parser = argparse.ArgumentParser(
-        description="Merge a validated one-row Excel into a monthly Excel by Datum."
-    )
-    parser.add_argument("validated_xlsx", type=Path, help="One-row validated Excel")
-    parser.add_argument("monthly_xlsx", type=Path, help="Monthly full Excel")
-    parser.add_argument(
-        "--out-dir",
-        dest="out_dir",
-        type=Path,
-        help="Output directory (default: same as monthly_xlsx)",
-    )
-    args = parser.parse_args()
-
-    validated_headers, validated_row = load_single_row(args.validated_xlsx)
+def merge_daily(
+    validated_xlsx: Path,
+    monthly_xlsx: Path,
+    *,
+    out_dir: Path | None = None,
+) -> Path:
+    validated_headers, validated_row = load_single_row(validated_xlsx)
     if not validated_headers or validated_headers[0] != "Datum":
         raise ValueError("Validated Excel must have 'Datum' as the first column.")
     datum = str(validated_row[0]).strip() if validated_row else ""
     if not datum:
         raise ValueError("Validated Excel has empty Datum.")
 
-    out_dir = args.out_dir or args.monthly_xlsx.parent
+    out_dir = out_dir or monthly_xlsx.parent
     out_dir.mkdir(parents=True, exist_ok=True)
     timestamp = int(datetime.now().timestamp())
     out_path = out_dir / f"full_result_{timestamp}.xlsx"
-    if out_path.resolve() == args.validated_xlsx.resolve():
+    if out_path.resolve() == validated_xlsx.resolve():
         raise ValueError("输出路径与已校验文件相同，请指定不同的输出目录。")
-    if out_path.resolve() == args.monthly_xlsx.resolve():
+    if out_path.resolve() == monthly_xlsx.resolve():
         raise ValueError("输出路径与全量文件相同，请指定不同的输出目录。")
 
-    shutil.copy2(args.monthly_xlsx, out_path)
+    shutil.copy2(monthly_xlsx, out_path)
     print(f"[Excel] Copied monthly file -> {out_path}")
     wb = load_workbook(out_path)
     ws = wb.active
@@ -106,14 +99,32 @@ def main() -> None:
         if col_idx is None:
             continue
         cell = ws.cell(row=target_row, column=col_idx)
-        cell.value = value
-        if normalize_header(header) == normalize_header("Datum") and isinstance(value, (datetime, date)):
-            cell.number_format = "DD/MM/YYYY"
+        if normalize_header(header) == normalize_header("Datum"):
+            write_datum_cell(cell, value)
+        else:
+            cell.value = value
     if missing_headers:
         print(f"[WARN] Headers not found in monthly Excel: {missing_headers}")
 
     wb.save(out_path)
     print(f"[Excel] Merged and saved: {out_path}")
+    return out_path
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(
+        description="Merge a validated one-row Excel into a monthly Excel by Datum."
+    )
+    parser.add_argument("validated_xlsx", type=Path, help="One-row validated Excel")
+    parser.add_argument("monthly_xlsx", type=Path, help="Monthly full Excel")
+    parser.add_argument(
+        "--out-dir",
+        dest="out_dir",
+        type=Path,
+        help="Output directory (default: same as monthly_xlsx)",
+    )
+    args = parser.parse_args()
+    merge_daily(args.validated_xlsx, args.monthly_xlsx, out_dir=args.out_dir)
 
 
 if __name__ == "__main__":

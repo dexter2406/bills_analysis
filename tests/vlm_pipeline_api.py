@@ -19,7 +19,11 @@ if str(SRC_DIR) not in sys.path:
 from bills_analysis.preprocess import compress_image_only_pdf, preprocess_image
 from bills_analysis.vlm import DEFAULT_PROMPT, prompts_dict
 from bills_analysis.contracts import PageInfo
-from bills_analysis.extract_by_azure_api import analyze_document_with_azure
+from bills_analysis.extract_by_azure_api import (
+    analyze_document_with_azure,
+    extract_office_invoice_azure,
+    clean_invoice_json,
+)
 
 
 crop_y_dict = {
@@ -77,6 +81,8 @@ def get_archive_subdir_name(run_date: str, category: str) -> str:
     except ValueError:
         yymm = "0000"
     cat = category.strip().lower()
+    if cat == "office":
+        return f"{yymm}DO Qonto Zahlungsausgang"
     if cat == "zbon":
         return f"{yymm}DO Bar Ausgabe"
     if cat == "bar":
@@ -86,6 +92,19 @@ def get_archive_subdir_name(run_date: str, category: str) -> str:
 
 def get_compressed_pdf_name(category: str, extracted_kv: dict, run_date: str) -> str | None:
     cat = category.strip().lower()
+    if cat == "office":
+        try:
+            dt = datetime.strptime(run_date, "%d/%m/%Y")
+            yymm = f"{dt.year % 100:02d}{dt.month:02d}"
+        except ValueError:
+            return None
+        sender = extracted_kv.get("sender") or ""
+        sender_first = str(sender).strip().split(" ")[0] if sender else ""
+        brutto = extracted_kv.get("brutto") or ""
+        brutto_norm = str(brutto).strip().replace(".", ",")
+        if sender_first and brutto_norm:
+            return f"{yymm}Do_{sender_first}_{brutto_norm}.pdf"
+        return None
     if cat == "zbon":
         try:
             dt = datetime.strptime(run_date, "%d/%m/%Y")
@@ -160,6 +179,7 @@ def run_pipeline(
         if not pdf_path.exists():
             print(f"未找到PDF: {pdf_path}")
             return None
+        is_office = category.strip().lower() == "office"
         file_type = "invoice"
         max_side = 1000
         print(f"\n=== 开始处理PDF ({idx}/{total}: {pdf_path} ===")
@@ -175,16 +195,36 @@ def run_pipeline(
             pdf_read_failed = True
         start = time.perf_counter()
         run_dir = output_root / pdf_path.stem
-        extracted_kv = {llm_field: None for llm_field in prompts_dict[purpose]['fields']} # brutto, netto, store_name, run_date
-        score_kv = {llm_field: None for llm_field in prompts_dict[purpose]['fields']}
-        score_kv.pop("run_date", None)
-        extracted_kv["run_date"] = run_date
+        if is_office:
+            extracted_kv = {
+                "run_date": run_date,
+                "type": None,
+                "sender": None,
+                "brutto": None,
+                "netto": None,
+                "tax_id": None,
+                "receiver_ok": None,
+            }
+            score_kv = {
+                "type": None,
+                "sender": None,
+                "brutto": None,
+                "netto": None,
+                "tax_id": None,
+                "receiver_ok": None,
+            }
+        else:
+            extracted_kv = {llm_field: None for llm_field in prompts_dict[purpose]['fields']} # brutto, netto, store_name, run_date
+            score_kv = {llm_field: None for llm_field in prompts_dict[purpose]['fields']}
+            score_kv.pop("run_date", None)
+            extracted_kv["run_date"] = run_date
         result_entry = {
             "filename": pdf_path.name,
             "result": extracted_kv,
             "score": score_kv,
             "category": category,
             "page_count": pdf_page_count,
+            "process_duration": {},
         }
         print(extracted_kv)
         if pdf_read_failed:
@@ -201,15 +241,24 @@ def run_pipeline(
             crop_y = [0,0.6]
         model_id = f"prebuilt-{file_type}"
         print(f"调用Azure: {pdf_path.name} | model {model_id}")
-        time_now, result_entry["preproc_time"] = calc_proc_time(start)
-        print("完成前处理，耗时: %.2f 秒" % result_entry["preproc_time"])
+        time_now, result_entry["process_duration"]["preproc_time"] = calc_proc_time(start)
+        print("完成前处理，耗时: %.2f 秒" % result_entry["process_duration"]["preproc_time"])
         azure_result = None
+        office_fields = {}
         if pdf_page_count is not None and pdf_page_count > max_pages:
             print(f"[PDF] 页数 {pdf_page_count} > {max_pages}，跳过 Azure 解析。")
             result_entry["skip_reason"] = f"page_count>{max_pages}"
         else:
             try:
-                azure_result = analyze_document_with_azure(str(pdf_path), model_id=model_id)
+                if is_office:
+                    azure_result, office_fields = analyze_document_with_azure(
+                        str(pdf_path),
+                        model_id=model_id,
+                        return_fields=True,
+                    )
+                    office_fields = clean_invoice_json(office_fields)
+                else:
+                    azure_result = analyze_document_with_azure(str(pdf_path), model_id=model_id)
             except Exception as exc:
                 print(f"[Azure] 调用失败: {exc}")
                 extracted_kv["brutto"] = None
@@ -217,23 +266,41 @@ def run_pipeline(
                 score_kv["brutto"] = None
                 score_kv["netto"] = None
                 azure_result = None
-        time_now, result_entry["proc_time"] = calc_proc_time(time_now)
-        print("完成账单分析，耗时: %.2f 秒" % result_entry["proc_time"])
+        time_now, result_entry["process_duration"]["proc_time"] = calc_proc_time(time_now)
+        print("完成账单分析，耗时: %.2f 秒" % result_entry["process_duration"]["proc_time"])
         if azure_result:
-            store_name = azure_result.get("store_name").split('\n')[0].split('.')[0]
-            value_map = {
-                "brutto": azure_result.get("brutto"),
-                "netto": azure_result.get("netto"),
-                "store_name": store_name[0].upper() + store_name[1:],
-                "total_tax": azure_result.get("total_tax"),
-            }
-            for key, value in value_map.items():
-                if key in extracted_kv and value not in (None, "", "None"):
-                    extracted_kv[key] = str(value)
-            score_kv["brutto"] = azure_result.get("confidence_brutto")
-            score_kv["netto"] = azure_result.get("confidence_netto")
-            score_kv["store_name"] = azure_result.get("confidence_store_name")
-            score_kv["total_tax"] = azure_result.get("confidence_total_tax")
+            if is_office:
+                extracted_kv["brutto"] = azure_result.get("brutto")
+                extracted_kv["netto"] = azure_result.get("netto")
+                extracted_kv["tax_id"] = azure_result.get("invoice_id")
+                score_kv["brutto"] = azure_result.get("confidence_brutto")
+                score_kv["netto"] = azure_result.get("confidence_netto")
+                score_kv["tax_id"] = azure_result.get("confidence_invoice_id")
+                office_info = extract_office_invoice_azure(office_fields)
+                extracted_kv["type"] = office_info.get("purpose")
+                extracted_kv["sender"] = office_info.get("sender")
+                receiver = office_info.get("receiver")
+                correct_receiver = "Ramen Ippin Dortmund"
+                if receiver != None and receiver != correct_receiver:
+                    print(f"[Office] Receiver {receiver} does not match {correct_receiver}. Marking receiver_ok as False.")
+                    extracted_kv["receiver_ok"] = False
+                else:
+                    extracted_kv["receiver_ok"] = True
+            else:
+                store_name = azure_result.get("store_name").split('\n')[0].split('.')[0]
+                value_map = {
+                    "brutto": azure_result.get("brutto"),
+                    "netto": azure_result.get("netto"),
+                    "store_name": store_name[0].upper() + store_name[1:],
+                    "total_tax": azure_result.get("total_tax"),
+                }
+                for key, value in value_map.items():
+                    if key in extracted_kv and value not in (None, "", "None"):
+                        extracted_kv[key] = str(value)
+                score_kv["brutto"] = azure_result.get("confidence_brutto")
+                score_kv["netto"] = azure_result.get("confidence_netto")
+                score_kv["store_name"] = azure_result.get("confidence_store_name")
+                score_kv["total_tax"] = azure_result.get("confidence_total_tax")
         print(f"extracted_kv: {extracted_kv}")
         print("开始压缩备份PDF...")
         archive_dir = backup_dest_dir / get_archive_subdir_name(run_date, category)
@@ -263,8 +330,8 @@ def run_pipeline(
         if final_pdf is not None:
             result_entry["preview_path"] = str(final_pdf)
         print(f"=== 完成处理PDF: {pdf_path} ===\n")
-        _ , result_entry["postproc_time"] = calc_proc_time(time_now)
-        print("完成后处理，耗时: %.2f 秒" % result_entry["proc_time"])
+        _, result_entry["process_duration"]["postproc_time"] = calc_proc_time(time_now)
+        print("完成后处理，耗时: %.2f 秒" % result_entry["process_duration"]["postproc_time"])
         return result_entry
 
     pdf_list = list(pdf_paths)
@@ -321,8 +388,12 @@ if __name__ == "__main__":
     parser.add_argument(
         "--cat",
         dest="category",
-        required=True,
-        help="Category name (e.g., BAR, ZBon)",
+        help="Category name (e.g., BAR, ZBon, OFFICE)",
+    )
+    parser.add_argument(
+        "--office",
+        action="store_true",
+        help="Shortcut for --cat=OFFICE",
     )
     parser.add_argument(
         "--run_date",
@@ -357,11 +428,17 @@ if __name__ == "__main__":
             max_pages = int(json.loads(thresholds_path.read_text(encoding="utf-8")).get("max_pages", max_pages))
         except Exception:
             pass
+    category = args.category
+    if args.office:
+        category = "OFFICE"
+    if not category:
+        print("必须指定 --cat=NAME 或使用 --office")
+        raise SystemExit(1)
     run_pipeline(
         inputs,
         output_root=ROOT_DIR / "outputs" / "vlm_pipeline",
         backup_dest_dir=args.backup_dest_dir,
-        category=args.category,
+        category=category,
         run_date=args.run_date,
         results_dir=args.results_dir,
         max_pages=max_pages,

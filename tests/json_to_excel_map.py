@@ -144,21 +144,21 @@ def main() -> None:
     # Map low-confidence fields to the Ausgabe slot based on actual output order
     datum = first.get("Datum") or "UNKNOWN"
     low_headers = set()
-    # BAR items
+    # ZBon items (Umsatz)
     for item in items:
         result = item.get("result") or {}
         run_date = normalize_date(result.get("run_date")) or "UNKNOWN"
         if run_date != datum:
             continue
         category = str(item.get("category") or "").strip().lower()
-        if category != "bar":
+        if category != "zbon":
             continue
         low_fields = low_confidence_fields(result, item.get("score") or {}, thresholds)
         if "brutto" in low_fields:
             low_headers.add("Umsatz Brutto")
         if "netto" in low_fields:
             low_headers.add("Umsatz Netto")
-    # ZBon items by slot
+    # BAR items by slot
     zbon_files = zbon_files_by_date.get(datum, [])
     for idx, fname in enumerate(zbon_files, start=1):
         for item in items:
@@ -206,7 +206,7 @@ def main() -> None:
         if col is None:
             continue
         cell = ws.cell(row=link_row_idx, column=col)
-        cell.value = "查看"
+        cell.value = "check pdf"
         cell.hyperlink = link
 
     wb.save(out_path)

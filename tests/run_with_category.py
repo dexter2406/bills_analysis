@@ -55,8 +55,10 @@ def main() -> None:
     )
     parser.add_argument("--bar", nargs="*", default=[], help="BAR PDF file paths")
     parser.add_argument("--zbon", nargs="*", default=[], help="ZBon PDF file paths")
+    parser.add_argument("--office", nargs="*", default=[], help="OFFICE PDF file paths")
     parser.add_argument("--bar-dir", type=Path, help="Directory containing BAR PDFs")
     parser.add_argument("--zbon-dir", type=Path, help="Directory containing ZBon PDFs")
+    parser.add_argument("--office-dir", type=Path, help="Directory containing OFFICE PDFs")
     parser.add_argument(
         "--dest-dir",
         dest="backup_dest_dir",
@@ -80,9 +82,13 @@ def main() -> None:
 
     bar_pdfs = _collect_pdfs(args.bar, args.bar_dir)
     zbon_pdfs = _collect_pdfs(args.zbon, args.zbon_dir)
+    office_pdfs = _collect_pdfs(args.office, args.office_dir)
 
-    if not bar_pdfs and not zbon_pdfs:
-        print("必须提供 BAR 或 ZBon 的 PDF（或目录）。")
+    if not bar_pdfs and not zbon_pdfs and not office_pdfs:
+        print("必须提供 BAR/ZBon 或 OFFICE 的 PDF（或目录）。")
+        raise SystemExit(1)
+    if office_pdfs and (bar_pdfs or zbon_pdfs):
+        print("OFFICE 与 BAR/ZBon 互斥，请单独运行。")
         raise SystemExit(1)
 
     output_root = ROOT_DIR / "outputs" / "vlm_pipeline"
@@ -90,24 +96,35 @@ def main() -> None:
     results_dir = args.results_dir or output_root
     results_path = results_dir / f"results_{timestamp}.json"
 
-    _run_category(
-        "BAR",
-        bar_pdfs,
-        output_root=output_root,
-        backup_dest_dir=args.backup_dest_dir,
-        run_date=args.run_date,
-        results_dir=results_dir,
-        results_path=results_path,
-    )
-    _run_category(
-        "ZBon",
-        zbon_pdfs,
-        output_root=output_root,
-        backup_dest_dir=args.backup_dest_dir,
-        run_date=args.run_date,
-        results_dir=results_dir,
-        results_path=results_path,
-    )
+    if office_pdfs:
+        _run_category(
+            "OFFICE",
+            office_pdfs,
+            output_root=output_root,
+            backup_dest_dir=args.backup_dest_dir,
+            run_date=args.run_date,
+            results_dir=results_dir,
+            results_path=results_path,
+        )
+    else:
+        _run_category(
+            "BAR",
+            bar_pdfs,
+            output_root=output_root,
+            backup_dest_dir=args.backup_dest_dir,
+            run_date=args.run_date,
+            results_dir=results_dir,
+            results_path=results_path,
+        )
+        _run_category(
+            "ZBon",
+            zbon_pdfs,
+            output_root=output_root,
+            backup_dest_dir=args.backup_dest_dir,
+            run_date=args.run_date,
+            results_dir=results_dir,
+            results_path=results_path,
+        )
 
     print(f"检测结果已保存: {results_path}")
 

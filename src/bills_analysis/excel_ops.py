@@ -17,12 +17,25 @@ def normalize_header(text: Any) -> str:
 def normalize_date(value: Any) -> str | None:
     if value is None:
         return None
+    if isinstance(value, datetime):
+        return value.strftime("%d/%m/%Y")
+    if isinstance(value, date):
+        return value.strftime("%d/%m/%Y")
     text = str(value).strip()
     if not text or text.lower() == "none":
         return None
     try:
         if re.match(r"^\d{4}-\d{2}-\d{2}$", text):
             dt = datetime.strptime(text, "%Y-%m-%d")
+            return dt.strftime("%d/%m/%Y")
+        if re.match(r"^\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}$", text):
+            dt = datetime.strptime(text, "%Y-%m-%d %H:%M:%S")
+            return dt.strftime("%d/%m/%Y")
+        if re.match(r"^\d{4}/\d{1,2}/\d{1,2}$", text):
+            dt = datetime.strptime(text, "%Y/%m/%d")
+            return dt.strftime("%d/%m/%Y")
+        if re.match(r"^\d{4}/\d{1,2}/\d{1,2}\s+\d{1,2}:\d{2}:\d{2}$", text):
+            dt = datetime.strptime(text, "%Y/%m/%d %H:%M:%S")
             return dt.strftime("%d/%m/%Y")
         if re.match(r"^\d{2}/\d{2}/\d{4}$", text):
             return text
@@ -60,6 +73,16 @@ def normalize_datum_value(value: Any) -> str:
     if parsed is not None:
         return parsed.strftime("%d/%m/%Y")
     return text
+
+
+def write_datum_cell(cell: Any, value: Any) -> None:
+    norm = normalize_date(value) or value
+    parsed = parse_datum(norm)
+    if parsed is not None:
+        cell.value = parsed
+    else:
+        cell.value = value
+    cell.number_format = "DD/MM/YYYY"
 
 
 def to_float(value: Any) -> float | None:
@@ -114,7 +137,7 @@ def low_confidence_fields(
     thresholds: dict[str, Any],
 ) -> set[str]:
     low: set[str] = set()
-    fields_to_check = ["brutto", "netto", "total_tax"]
+    fields_to_check = ["brutto", "netto"]
     for field in fields_to_check:
         value = result.get(field)
         if value in (None, "", "None"):
@@ -161,12 +184,12 @@ def compute_low_headers(
         low_fields = low_confidence_fields(result, score, thresholds)
         if not low_fields:
             continue
-        if category == "bar":
+        if category == "zbon":
             if "brutto" in low_fields:
                 low_headers.add("Umsatz Brutto")
             if "netto" in low_fields:
                 low_headers.add("Umsatz Netto")
-        elif category == "zbon":
+        elif category == "bar":
             zbon_idx += 1
             if zbon_idx > max_zbon:
                 continue
@@ -212,10 +235,10 @@ def build_rows_with_meta(
         netto = to_float(result.get("netto"))
         store = str(result.get("store_name") or "").strip()
 
-        if category == "bar":
+        if category == "zbon":
             row["Umsatz Brutto"] = brutto
             row["Umsatz Netto"] = netto
-        elif category == "zbon":
+        elif category == "bar":
             row["_zbon_count"] += 1
             if len(row["Ausgaben"]) < max_zbon:
                 row["Ausgaben"].append(
