@@ -17,11 +17,11 @@ Thumbs.db
 .mypy_cache/
 .ruff_cache/
 
-# Outputs and runs
-outputs/
-outputs/*
 
 # Local data (keep samples out of VCS unless intentional)
-data/samples/*
 uv.lock
 .env
+
+# ignore
+outputs/*
+data/samples/*
