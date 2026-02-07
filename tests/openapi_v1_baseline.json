@@ -1,0 +1,637 @@
+{
+  "paths": {
+    "/healthz": {
+      "get": {
+        "description": "Lightweight health endpoint for liveness checks.",
+        "operationId": "healthz_healthz_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "title": "Response Healthz Healthz Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Healthz"
+      }
+    },
+    "/v1/batches": {
+      "get": {
+        "description": "List batches with stable v1 response envelope.",
+        "operationId": "list_batches_v1_batches_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BatchListResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Batches"
+      },
+      "post": {
+        "description": "Create a batch and enqueue process task.",
+        "operationId": "create_batch_v1_batches_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateBatchRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BatchResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Batch"
+      }
+    },
+    "/v1/batches/{batch_id}": {
+      "get": {
+        "description": "Fetch one batch by id.",
+        "operationId": "get_batch_v1_batches__batch_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "batch_id",
+            "required": true,
+            "schema": {
+              "title": "Batch Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BatchResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Batch"
+      }
+    },
+    "/v1/batches/{batch_id}/merge": {
+      "post": {
+        "description": "Enqueue merge task for a reviewed batch.",
+        "operationId": "queue_merge_v1_batches__batch_id__merge_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "batch_id",
+            "required": true,
+            "schema": {
+              "title": "Batch Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MergeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MergeTaskResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Queue Merge"
+      }
+    },
+    "/v1/batches/{batch_id}/review": {
+      "put": {
+        "description": "Store human-reviewed rows for a batch.",
+        "operationId": "submit_review_v1_batches__batch_id__review_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "batch_id",
+            "required": true,
+            "schema": {
+              "title": "Batch Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SubmitReviewRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BatchResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Submit Review"
+      }
+    }
+  },
+  "schemas": {
+    "BatchListResponse": {
+      "additionalProperties": false,
+      "description": "Paginated/list response wrapper for batch query endpoint.",
+      "properties": {
+        "items": {
+          "items": {
+            "$ref": "#/components/schemas/BatchResponse"
+          },
+          "title": "Items",
+          "type": "array"
+        },
+        "schema_version": {
+          "const": "v1",
+          "default": "v1",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "total": {
+          "title": "Total",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "total",
+        "items"
+      ],
+      "title": "BatchListResponse",
+      "type": "object"
+    },
+    "BatchResponse": {
+      "additionalProperties": false,
+      "description": "Public batch response contract returned by API endpoints.",
+      "properties": {
+        "artifacts": {
+          "additionalProperties": true,
+          "title": "Artifacts",
+          "type": "object"
+        },
+        "batch_id": {
+          "title": "Batch Id",
+          "type": "string"
+        },
+        "created_at": {
+          "format": "date-time",
+          "title": "Created At",
+          "type": "string"
+        },
+        "error": {
+          "anyOf": [
+            {
+              "$ref": "#/components/schemas/ErrorInfo"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "inputs": {
+          "items": {
+            "$ref": "#/components/schemas/InputFile"
+          },
+          "title": "Inputs",
+          "type": "array"
+        },
+        "merge_output": {
+          "additionalProperties": true,
+          "title": "Merge Output",
+          "type": "object"
+        },
+        "review_rows_count": {
+          "default": 0,
+          "title": "Review Rows Count",
+          "type": "integer"
+        },
+        "run_date": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Run Date"
+        },
+        "schema_version": {
+          "const": "v1",
+          "default": "v1",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "status": {
+          "$ref": "#/components/schemas/BatchStatus"
+        },
+        "type": {
+          "$ref": "#/components/schemas/BatchType"
+        },
+        "updated_at": {
+          "format": "date-time",
+          "title": "Updated At",
+          "type": "string"
+        }
+      },
+      "required": [
+        "batch_id",
+        "type",
+        "status",
+        "created_at",
+        "updated_at"
+      ],
+      "title": "BatchResponse",
+      "type": "object"
+    },
+    "BatchStatus": {
+      "description": "Lifecycle status for a batch processing job.",
+      "enum": [
+        "queued",
+        "running",
+        "review_ready",
+        "merging",
+        "merged",
+        "failed"
+      ],
+      "title": "BatchStatus",
+      "type": "string"
+    },
+    "BatchType": {
+      "description": "Supported high-level batch categories.",
+      "enum": [
+        "daily",
+        "office"
+      ],
+      "title": "BatchType",
+      "type": "string"
+    },
+    "CreateBatchRequest": {
+      "additionalProperties": false,
+      "description": "Request payload for creating a new processing batch.",
+      "properties": {
+        "inputs": {
+          "items": {
+            "$ref": "#/components/schemas/InputFile"
+          },
+          "minItems": 1,
+          "title": "Inputs",
+          "type": "array"
+        },
+        "metadata": {
+          "additionalProperties": true,
+          "title": "Metadata",
+          "type": "object"
+        },
+        "run_date": {
+          "anyOf": [
+            {
+              "pattern": "^\\d{2}/\\d{2}/\\d{4}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Run Date"
+        },
+        "type": {
+          "$ref": "#/components/schemas/BatchType"
+        }
+      },
+      "required": [
+        "type",
+        "inputs"
+      ],
+      "title": "CreateBatchRequest",
+      "type": "object"
+    },
+    "ErrorInfo": {
+      "additionalProperties": false,
+      "description": "Normalized API error payload for batch-level failures.",
+      "properties": {
+        "code": {
+          "title": "Code",
+          "type": "string"
+        },
+        "details": {
+          "anyOf": [
+            {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Details"
+        },
+        "message": {
+          "title": "Message",
+          "type": "string"
+        }
+      },
+      "required": [
+        "code",
+        "message"
+      ],
+      "title": "ErrorInfo",
+      "type": "object"
+    },
+    "HTTPValidationError": {
+      "properties": {
+        "detail": {
+          "items": {
+            "$ref": "#/components/schemas/ValidationError"
+          },
+          "title": "Detail",
+          "type": "array"
+        }
+      },
+      "title": "HTTPValidationError",
+      "type": "object"
+    },
+    "InputFile": {
+      "additionalProperties": false,
+      "description": "Single input file descriptor from API requests.",
+      "properties": {
+        "category": {
+          "anyOf": [
+            {
+              "enum": [
+                "bar",
+                "zbon",
+                "office"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Category"
+        },
+        "path": {
+          "minLength": 1,
+          "title": "Path",
+          "type": "string"
+        }
+      },
+      "required": [
+        "path"
+      ],
+      "title": "InputFile",
+      "type": "object"
+    },
+    "MergeRequest": {
+      "additionalProperties": false,
+      "description": "Request payload to trigger merge into target dataset.",
+      "properties": {
+        "metadata": {
+          "additionalProperties": true,
+          "title": "Metadata",
+          "type": "object"
+        },
+        "mode": {
+          "default": "overwrite",
+          "enum": [
+            "overwrite",
+            "append"
+          ],
+          "title": "Mode",
+          "type": "string"
+        },
+        "monthly_excel_path": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Monthly Excel Path"
+        }
+      },
+      "title": "MergeRequest",
+      "type": "object"
+    },
+    "MergeTaskResponse": {
+      "additionalProperties": false,
+      "description": "Public merge-task response for async merge trigger endpoint.",
+      "properties": {
+        "batch_id": {
+          "title": "Batch Id",
+          "type": "string"
+        },
+        "created_at": {
+          "format": "date-time",
+          "title": "Created At",
+          "type": "string"
+        },
+        "schema_version": {
+          "const": "v1",
+          "default": "v1",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "task_id": {
+          "title": "Task Id",
+          "type": "string"
+        },
+        "task_type": {
+          "$ref": "#/components/schemas/TaskType"
+        }
+      },
+      "required": [
+        "task_id",
+        "batch_id",
+        "task_type",
+        "created_at"
+      ],
+      "title": "MergeTaskResponse",
+      "type": "object"
+    },
+    "SubmitReviewRequest": {
+      "additionalProperties": false,
+      "description": "Human-reviewed rows submitted back to backend.",
+      "properties": {
+        "rows": {
+          "items": {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          "minItems": 1,
+          "title": "Rows",
+          "type": "array"
+        }
+      },
+      "required": [
+        "rows"
+      ],
+      "title": "SubmitReviewRequest",
+      "type": "object"
+    },
+    "TaskType": {
+      "description": "Queue task types handled by the worker.",
+      "enum": [
+        "process_batch",
+        "merge_batch"
+      ],
+      "title": "TaskType",
+      "type": "string"
+    },
+    "ValidationError": {
+      "properties": {
+        "ctx": {
+          "title": "Context",
+          "type": "object"
+        },
+        "input": {
+          "title": "Input"
+        },
+        "loc": {
+          "items": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "integer"
+              }
+            ]
+          },
+          "title": "Location",
+          "type": "array"
+        },
+        "msg": {
+          "title": "Message",
+          "type": "string"
+        },
+        "type": {
+          "title": "Error Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "loc",
+        "msg",
+        "type"
+      ],
+      "title": "ValidationError",
+      "type": "object"
+    }
+  }
+}
