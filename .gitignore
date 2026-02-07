@@ -24,3 +24,4 @@ outputs/*
 # Local data (keep samples out of VCS unless intentional)
 data/samples/*
 uv.lock
+.env
