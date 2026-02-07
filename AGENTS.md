@@ -110,6 +110,23 @@
 - M2：开放 API（create batch / query status / submit review / merge）。
 - M3：前端完成上传-校验-确认-下载闭环。
 
+## 5.1 启动与验证最小命令
+- 旧流程（真实业务链）：  
+  `uv run python tests/run_with_category.py --bar <bar.pdf> --zbon <zbon.pdf> --run_date 04/02/2026`
+- 新 API 启动：  
+  `uv run invoice-web-api`
+- API 健康检查：  
+  `GET http://127.0.0.1:8000/healthz`
+- Schema 契约测试：  
+  `uv run pytest tests/test_api_schema_v1.py -q`
+- 导出 OpenAPI v1 基线：  
+  `uv run python scripts/export_openapi_v1.py`
+
+## 5.2 当前里程碑冻结点
+- `v1` API schema 已冻结（`src/bills_analysis/models/`）。
+- 非兼容变更禁止：不得删除/重命名/改类型已发布字段。
+- 如需变更，必须先版本升级（如 `v1.1`/`v2`）并在 `SESSION_NOTES.md` 标注 breaking change。
+
 ## 6) 从本地 Excel 过渡到 Lark 的目标工作流
 当前流程：`PDF -> 识别 JSON -> 待校验 Excel -> 人工修正 -> merge Excel`。
 
