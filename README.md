@@ -16,6 +16,12 @@ Local backend CLI skeleton for the invoice Azure API extraction PoC.
 
 ## Layout
 - `src/bills_analysis/`: core package and `contracts.py` for `extraction.json`.
+- `src/bills_analysis/api/`: FastAPI routes.
+- `src/bills_analysis/services/`: process/review/merge orchestration.
+- `src/bills_analysis/integrations/`: adapter layer (queue/repo/backend stubs).
+- `src/bills_analysis/models/`: API/queue schemas.
+- `src/bills_analysis/workers/`: queue task worker runtime.
+- `frontend/`: frontend app placeholder (for Azure Static Web Apps).
 - `cli/main.py`: local entrypoint that forwards to the Typer app.
 - `tests/`: minimal CLI regression placeholder.
 - `data/samples/`: drop electronic and scanned PDF fixtures here.
@@ -30,6 +36,42 @@ Local backend CLI skeleton for the invoice Azure API extraction PoC.
 
 - Convert results JSON to a one-row Excel:  
   `uv run python tests/json_to_excel_map.py outputs/vlm_pipeline/results_1770199982.json outputs/vlm_pipeline/results_1770199982.xlsx`
+
+- Merge validated one-row Excel into monthly Excel:  
+  `uv run python tests/merge_daily_excel.py results_1770202138.xlsx data/daily_sample.xlsx --out-dir outputs`
+
+- Clean up outputs (dry run by default, add --yes to delete):  
+  `uv run python tests/cleanup_outputs.py --root outputs --pattern "vlm_pipeline/*"`
+
+## Webapp skeleton (FastAPI + Queue contract)
+- Install with web extras:  
+  `uv sync --extra web`
+- Start API (includes inline local worker by default):  
+  `uv run invoice-web-api`
+- Health check:  
+  `GET http://127.0.0.1:8000/healthz`
+- Create batch:  
+  `POST /v1/batches`
+  ```json
+  {
+    "type": "daily",
+    "run_date": "06/02/2026",
+    "inputs": [
+      {"path": "data/samples/bar/a.pdf", "category": "bar"},
+      {"path": "data/samples/zbon/b.pdf", "category": "zbon"}
+    ]
+  }
+  ```
+- Poll batch status:  
+  `GET /v1/batches/{batch_id}`
+- Submit reviewed rows:  
+  `PUT /v1/batches/{batch_id}/review`
+- Queue merge:  
+  `POST /v1/batches/{batch_id}/merge`
+
+Notes:
+- Current backend adapter is intentionally minimal and writes placeholder artifacts under `outputs/webapp/{batch_id}/`.
+- Queue/repository are in-memory implementations; replace them with Azure Queue + persistent store later without changing API/use-case signatures.
 
 ## Next steps (per PoC)
 - Fill the pipeline (render → preprocess → Azure API → extract → evidence) inside `src/bills_analysis/`.
