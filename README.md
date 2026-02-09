@@ -64,13 +64,18 @@ Local backend CLI skeleton for the invoice Azure API extraction PoC.
   ```
 - Poll batch status:  
   `GET /v1/batches/{batch_id}`
+- Upload batch files (multipart):  
+  `POST /v1/batches/upload`
+  - Common fields: `type`, `run_date`, `metadata_json`
+  - `daily`: required single `zbon_file`, optional multiple `bar_files`
+  - `office`: required multiple `office_files`
 - Submit reviewed rows:  
   `PUT /v1/batches/{batch_id}/review`
 - Queue merge:  
   `POST /v1/batches/{batch_id}/merge`
 
 Notes:
-- Current backend adapter is intentionally minimal and writes placeholder artifacts under `outputs/webapp/{batch_id}/`.
+- Current backend adapter runs preprocess + Azure extraction flow and writes artifacts under `outputs/webapp/{batch_id}/`.
 - Queue/repository are in-memory implementations; replace them with Azure Queue + persistent store later without changing API/use-case signatures.
 
 ## Next steps (per PoC)

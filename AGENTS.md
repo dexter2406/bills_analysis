@@ -93,6 +93,11 @@
 2. `end` 自动记录最近一次 commit、改动文件列表。
 3. `next` 和 `risk` 由人工填写，保证后续 session 可直接接续。
 
+强制规则（防止前后端记录不一致）：
+1. 所有 Agent（含 Frontend/Backend）在开始实际编码/改文件前，必须先执行一次 `start`；未记录 `START` 的 session 视为不合规，不应提交。
+2. 所有 Agent 在结束工作（即将交接/暂停）时必须执行一次 `end`，即使本次 session 没有产生 commit 也要记录（`end` 允许记录 WIP/无提交，但必须填写 next/risk）。
+3. 同一 `session-name` 允许多次调用 `end`：后一次 `end` 必须覆盖同 session 的上一条 `END` 记录（不追加重复 END），以最后一次为准。
+
 ### 4.5 API 契约优先
 - 前后端统一读 `src/bills_analysis/models/` 中的 schema。
 - API 变更必须先更新 schema，再更新调用方。
