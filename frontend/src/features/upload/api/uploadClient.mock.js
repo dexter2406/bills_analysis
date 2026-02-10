@@ -140,6 +140,39 @@ export function createMockUploadClient(options = {}) {
         created_at: new Date().toISOString(),
       });
     },
+
+    /**
+     * Return generated review rows for manual review page.
+     * @param {string} batchId
+     */
+    async getReviewRows(batchId) {
+      await wait(latencyMs);
+      const record = store.get(batchId);
+      if (!record) {
+        throw new Error(`Batch ${batchId} not found in mock store.`);
+      }
+
+      const rows = record.inputs.map((input, index) => ({
+        row_id: `row-${String(index + 1).padStart(4, "0")}`,
+        category: input.category || "office",
+        filename: fileNameFromPath(input.path),
+        result: { run_date: record.run_date || "-" },
+        score: {},
+        preview_url: "",
+      }));
+
+      return { rows };
+    },
+
+    /**
+     * Simulate local merge source upload endpoint.
+     * @param {string} _batchId
+     * @param {File} file
+     */
+    async uploadMergeSourceLocal(_batchId, file) {
+      await wait(latencyMs);
+      return { monthly_excel_path: `mock://merge-source/${safeName(file.name)}` };
+    },
   };
 }
 
@@ -168,4 +201,14 @@ function wait(ms) {
  */
 function safeName(value) {
   return value.replace(/[^a-zA-Z0-9._-]/g, "_");
+}
+
+/**
+ * Read tail file name from an input path string.
+ * @param {string} path
+ */
+function fileNameFromPath(path) {
+  const normalized = String(path || "").replace(/\\/g, "/");
+  const parts = normalized.split("/");
+  return parts[parts.length - 1] || "unknown.pdf";
 }

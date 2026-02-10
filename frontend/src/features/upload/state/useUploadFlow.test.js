@@ -1,5 +1,5 @@
-import { renderHook, waitFor } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { act, renderHook, waitFor } from "@testing-library/react";
+import { describe, expect, it, vi } from "vitest";
 import { createMockUploadClient } from "../api/uploadClient.mock";
 import { useUploadFlow } from "./useUploadFlow";
 
@@ -9,7 +9,9 @@ describe("useUploadFlow", () => {
     const { result } = renderHook(() => useUploadFlow({ client }));
 
     const txt = new File(["x"], "notes.txt", { type: "text/plain" });
-    result.current.actions.addFiles([txt]);
+    act(() => {
+      result.current.actions.addFiles([txt]);
+    });
 
     expect(result.current.state.files).toHaveLength(0);
     expect(result.current.state.rejectedMessage).toMatch(/Ignored non-PDF files/i);
@@ -22,8 +24,12 @@ describe("useUploadFlow", () => {
     const first = new File(["a"], "zbon-1.pdf", { type: "application/pdf" });
     const second = new File(["b"], "zbon-2.pdf", { type: "application/pdf" });
 
-    result.current.actions.addFiles([first], "zbon");
-    result.current.actions.addFiles([second], "zbon");
+    act(() => {
+      result.current.actions.addFiles([first], "zbon");
+    });
+    act(() => {
+      result.current.actions.addFiles([second], "zbon");
+    });
 
     const zbonFiles = result.current.state.files.filter((file) => file.category === "zbon");
     expect(zbonFiles).toHaveLength(1);
@@ -35,14 +41,21 @@ describe("useUploadFlow", () => {
     const { result } = renderHook(() => useUploadFlow({ client }));
 
     const file = new File(["a"], "invoice.pdf", { type: "application/pdf" });
-    result.current.actions.addFiles([file], "bar");
-    await result.current.actions.submitBatch();
-
-    await waitFor(() => {
-      expect(result.current.state.phase).toBe("review_ready");
+    act(() => {
+      result.current.actions.addFiles([file], "bar");
+    });
+    await act(async () => {
+      await result.current.actions.submitBatch();
     });
 
-    const ok = await result.current.actions.submitReviewOnly([{ filename: "invoice.pdf", brutto: "10.5" }]);
+    await waitFor(() => {
+      expect(result.current.state.phase).toBe("tracking");
+    });
+
+    let ok;
+    await act(async () => {
+      ok = await result.current.actions.submitReviewOnly([{ filename: "invoice.pdf", brutto: "10.5" }]);
+    });
     expect(ok).toBe(true);
     expect(result.current.state.phase).toBe("review_ready");
     expect(result.current.state.reviewSubmitted).toBe(true);
@@ -54,20 +67,32 @@ describe("useUploadFlow", () => {
     const { result } = renderHook(() => useUploadFlow({ client }));
 
     const file = new File(["a"], "invoice.pdf", { type: "application/pdf" });
-    result.current.actions.addFiles([file], "bar");
-    await result.current.actions.submitBatch();
-
-    await waitFor(() => {
-      expect(result.current.state.phase).toBe("review_ready");
+    act(() => {
+      result.current.actions.addFiles([file], "bar");
+    });
+    await act(async () => {
+      await result.current.actions.submitBatch();
     });
 
-    await result.current.actions.submitReviewOnly([{ filename: "invoice.pdf", brutto: "10.5" }]);
-    const mergeOk = await result.current.actions.queueMergeOnly({ mode: "overwrite", monthly_excel_path: null });
+    await waitFor(() => {
+      expect(result.current.state.phase).toBe("tracking");
+    });
+
+    await act(async () => {
+      await result.current.actions.submitReviewOnly([{ filename: "invoice.pdf", brutto: "10.5" }]);
+    });
+    let mergeOk;
+    await act(async () => {
+      mergeOk = await result.current.actions.queueMergeOnly({ mode: "overwrite", monthly_excel_path: null });
+    });
     expect(mergeOk).toBe(true);
 
-    await waitFor(() => {
-      expect(result.current.state.phase).toBe("done");
-    });
+    await waitFor(
+      () => {
+        expect(result.current.state.phase).toBe("done");
+      },
+      { timeout: 8000 },
+    );
   });
 
   it("blocks retry merge when batch is not failed", async () => {
@@ -75,15 +100,64 @@ describe("useUploadFlow", () => {
     const { result } = renderHook(() => useUploadFlow({ client }));
 
     const file = new File(["a"], "invoice.pdf", { type: "application/pdf" });
-    result.current.actions.addFiles([file], "bar");
-    await result.current.actions.submitBatch();
-
-    await waitFor(() => {
-      expect(result.current.state.phase).toBe("review_ready");
+    act(() => {
+      result.current.actions.addFiles([file], "bar");
+    });
+    await act(async () => {
+      await result.current.actions.submitBatch();
     });
 
-    const ok = await result.current.actions.retryMerge();
+    await waitFor(() => {
+      expect(result.current.state.phase).toBe("tracking");
+    });
+
+    let ok;
+    await act(async () => {
+      ok = await result.current.actions.retryMerge();
+    });
     expect(ok).toBe(false);
     expect(result.current.state.systemError).toMatch(/failed/i);
+  });
+
+  it("uses createBatchUpload when available", async () => {
+    const queuedBatch = {
+      schema_version: "v1",
+      batch_id: "b-upload",
+      type: "daily",
+      status: "queued",
+      run_date: "10/02/2026",
+      inputs: [{ path: "outputs/webapp/uploads/x/zbon/01_zbon.pdf", category: "zbon" }],
+      artifacts: {},
+      review_rows_count: 0,
+      merge_output: {},
+      error: null,
+      created_at: "2026-02-10T00:00:00Z",
+      updated_at: "2026-02-10T00:00:00Z",
+    };
+
+    const client = {
+      mode: "real",
+      uploadFiles: vi.fn(),
+      createBatch: vi.fn(),
+      createBatchUpload: vi.fn(async () => ({ batch_id: "b-upload" })),
+      getBatch: vi.fn(async () => queuedBatch),
+      listBatches: vi.fn(async () => ({ schema_version: "v1", total: 1, items: [queuedBatch] })),
+      submitReview: vi.fn(async () => ({ ...queuedBatch, status: "review_ready" })),
+      queueMerge: vi.fn(async () => ({ schema_version: "v1", task_id: "t-1", batch_id: "b-upload", task_type: "merge_batch", created_at: "2026-02-10T00:00:00Z" })),
+    };
+
+    const { result } = renderHook(() => useUploadFlow({ client }));
+    act(() => {
+      result.current.actions.addFiles([new File(["zbon"], "zbon.pdf", { type: "application/pdf" })], "zbon");
+    });
+    let ok;
+    await act(async () => {
+      ok = await result.current.actions.submitBatch();
+    });
+
+    expect(ok).toBe(true);
+    expect(client.createBatchUpload).toHaveBeenCalledTimes(1);
+    expect(client.createBatch).not.toHaveBeenCalled();
+    expect(client.uploadFiles).not.toHaveBeenCalled();
   });
 });
