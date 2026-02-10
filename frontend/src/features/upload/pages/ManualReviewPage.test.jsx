@@ -37,11 +37,15 @@ function buildBaseContext() {
     actions: {
       submitReviewOnly: vi.fn(async () => true),
       queueMergeOnly: vi.fn(async () => true),
+      fetchReviewRows: vi.fn(async () => []),
+      resolveMonthlyPathFromLocal: vi.fn(async (file) => `local://${file.name}`),
       retryMerge: vi.fn(async () => true),
     },
     state: {
       files: [{ id: "f1", name: "a.pdf", category: "bar" }],
       runDate: "10/02/2026",
+      reviewRows: [],
+      reviewRowsLoading: false,
       batch: {
         batch_id: "b1",
         status: "review_ready",
