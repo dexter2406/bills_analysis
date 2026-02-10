@@ -96,3 +96,19 @@
 - next: Frontend should switch Manual Review data source to GET /v1/batches/{batch_id}/review-rows and upload monthly source via /merge-source/local before queue merge
 - risk_or_note: Medium: batch is marked failed when any file extraction/semantic call fails by design; ensure frontend handles failed state and surfaces error
 - status: done
+
+## [2026-02-10 15:59:29] START agent-b-fix-cors-preflight
+- branch: `feat-backend`
+- head: `16340bd`
+- start_head: `16340bd`
+- worktree: `D:\CodeSpace\prj_rechnung\bills_analysis_backend`
+- status: in_progress
+
+## [2026-02-10 16:00:50] END agent-b-fix-cors-preflight
+- branch: `feat-backend`
+- commit: `16340bd`
+- summary: backend: add M1.1 integration APIs for review rows, preview serving, and local merge source upload; stabilize async worker processing with timeout and failed-state propagation; enable real Excel merge output with monthly source fallback
+- uncommitted_files: `README.md`, `SESSION_NOTES.md`, `src/bills_analysis/api/main.py`, `tests/test_api_schema_v1.py`
+- next: Frontend rerun createBatch JSON flow and verify OPTIONS preflight no longer returns 405
+- risk_or_note: Low risk: CORS middleware only affects cross-origin headers and preflight handling
+- status: done

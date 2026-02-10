@@ -48,6 +48,8 @@ Local backend CLI skeleton for the invoice Azure API extraction PoC.
   `uv sync --extra web`
 - Start API (includes inline local worker by default):  
   `uv run invoice-web-api`
+- Dev CORS origins (default): `http://127.0.0.1:5173,http://localhost:5173`
+  - Override with env: `CORS_ALLOW_ORIGINS=http://127.0.0.1:5173,http://localhost:5173`
 - Health check:  
   `GET http://127.0.0.1:8000/healthz`
 - Create batch:  

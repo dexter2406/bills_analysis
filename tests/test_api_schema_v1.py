@@ -119,6 +119,7 @@ def test_api_contract_v1_endpoints() -> None:
     with TestClient(app) as client:
         create_res = client.post(
             "/v1/batches",
+            headers={"Origin": "http://127.0.0.1:5173"},
             json={
                 "type": "daily",
                 "run_date": "04/02/2026",
@@ -127,6 +128,7 @@ def test_api_contract_v1_endpoints() -> None:
             },
         )
         assert create_res.status_code == 200
+        assert create_res.headers.get("access-control-allow-origin") == "http://127.0.0.1:5173"
         created = create_res.json()
         assert created["schema_version"] == "v1"
         batch_id = created["batch_id"]
@@ -161,6 +163,23 @@ def test_api_contract_v1_endpoints() -> None:
         assert list_body["schema_version"] == "v1"
         assert isinstance(list_body["items"], list)
         assert list_body["total"] >= 1
+
+
+def test_cors_preflight_options_for_create_batch() -> None:
+    """CORS preflight OPTIONS for create-batch endpoint should not return 405."""
+
+    TestClient, app = _get_test_client_and_app()
+    with TestClient(app) as client:
+        res = client.options(
+            "/v1/batches",
+            headers={
+                "Origin": "http://127.0.0.1:5173",
+                "Access-Control-Request-Method": "POST",
+            },
+        )
+        assert res.status_code == 200
+        assert res.headers.get("access-control-allow-origin") == "http://127.0.0.1:5173"
+        assert "POST" in (res.headers.get("access-control-allow-methods") or "")
 
 
 def _make_excel_bytes() -> bytes:

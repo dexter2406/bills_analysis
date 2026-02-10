@@ -10,6 +10,7 @@ from typing import Any
 from uuid import uuid4
 
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from pydantic import ValidationError
 
@@ -53,6 +54,26 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 
 app = FastAPI(title="bills_analysis webapp skeleton", version="0.1.0", lifespan=lifespan)
+
+
+def _load_cors_allow_origins() -> list[str]:
+    """Resolve CORS allowed origins from env with safe local defaults."""
+
+    raw = os.getenv("CORS_ALLOW_ORIGINS", "").strip()
+    if raw:
+        origins = [item.strip() for item in raw.split(",") if item.strip()]
+        if origins:
+            return origins
+    return ["http://127.0.0.1:5173", "http://localhost:5173"]
+
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=_load_cors_allow_origins(),
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 def _parse_metadata_json(raw_metadata: str | None) -> dict[str, Any]:
