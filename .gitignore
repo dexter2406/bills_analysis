@@ -25,3 +25,7 @@ uv.lock
 # ignore
 outputs/*
 data/samples/*
+
+# SKILLS
+.codex/skills/react-best-practices/rules
+
