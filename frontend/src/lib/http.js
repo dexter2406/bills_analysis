@@ -20,6 +20,9 @@ export class AppHttpError extends Error {
  */
 export function toErrorMessage(error) {
   if (error instanceof AppHttpError) {
+    if (error.status === 405) {
+      return "Method not allowed (possible CORS preflight issue). Check backend CORS configuration.";
+    }
     if (typeof error.details === "object" && error.details && "detail" in error.details) {
       const detail = error.details.detail;
       if (typeof detail === "string") {
@@ -57,15 +60,20 @@ export async function requestJson({
 }) {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+  const isFormData = typeof FormData !== "undefined" && body instanceof FormData;
+  const requestHeaders = isFormData
+    ? { ...headers }
+    : {
+        "Content-Type": "application/json",
+        ...headers,
+      };
+  const requestBody = body === undefined ? undefined : isFormData ? body : JSON.stringify(body);
 
   try {
     const response = await fetchImpl(`${baseUrl}${path}`, {
       method,
-      headers: {
-        "Content-Type": "application/json",
-        ...headers,
-      },
-      body: body === undefined ? undefined : JSON.stringify(body),
+      headers: requestHeaders,
+      body: requestBody,
       signal: controller.signal,
     });
 

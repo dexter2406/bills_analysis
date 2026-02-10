@@ -97,3 +97,13 @@ export const INPUT_FILE_CATEGORIES = ["bar", "zbon", "office"];
  * @property {TaskType} task_type
  * @property {string} created_at
  */
+
+/**
+ * @typedef {Object} CreateBatchUploadTaskResponse
+ * @property {"v1"} schema_version
+ * @property {string} task_id
+ * @property {string} batch_id
+ * @property {BatchType} type
+ * @property {BatchStatus} status
+ * @property {string} created_at
+ */
