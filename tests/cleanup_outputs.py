@@ -3,10 +3,12 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-from bills_analysis.cleanup import collect_paths, cleanup_paths
+from bills_analysis.services.maintenance_service import cleanup_outputs
 
 
 def main() -> None:
+    """CLI wrapper that executes output cleanup via src maintenance service."""
+
     parser = argparse.ArgumentParser(
         description="Manually clean up output files or folders."
     )
@@ -36,16 +38,14 @@ def main() -> None:
     args = parser.parse_args()
 
     targets = [Path(p) for p in args.path]
-    if args.pattern:
-        targets.extend(collect_paths(args.root, args.pattern))
-
-    if not targets:
-        print("No targets. Use --pattern or --path.")
-        raise SystemExit(1)
-
+    deleted = cleanup_outputs(
+        root=args.root,
+        patterns=args.pattern,
+        paths=targets,
+        confirm_delete=args.yes,
+    )
     if not args.yes:
         print("Dry run. Use --yes to delete.")
-    deleted = cleanup_paths(targets, dry_run=not args.yes)
     for path in deleted:
         print(f"- {path}")
     print(f"Total: {len(deleted)}")
