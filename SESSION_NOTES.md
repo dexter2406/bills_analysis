@@ -80,3 +80,19 @@
 - note: Monthly Excel source switch now supports `from Local` and `from Lark` (scaffold); local maps to `local://<filename>`.
 - next: split first-version frontend commits into tooling/contracts/upload/review/docs and push for backend联调.
 - risk: Local Excel currently passes only string path token, backend has no binary upload parsing yet.
+
+## [2026-02-10 15:26:00] START agent-b-m1-1-api-stabilization
+- branch: `feat-backend`
+- head: `8d64dc2`
+- start_head: `8d64dc2`
+- worktree: `D:\CodeSpace\prj_rechnung\bills_analysis_backend`
+- status: in_progress
+
+## [2026-02-10 15:33:55] END agent-b-m1-1-api-stabilization
+- branch: `feat-backend`
+- commit: `8d64dc2`
+- summary: chore: fix text conflict
+- uncommitted_files: `README.md`, `SESSION_NOTES.md`, `src/bills_analysis/api/main.py`, `src/bills_analysis/extract_by_azure_api.py`, `src/bills_analysis/integrations/local_backend.py`, `src/bills_analysis/models/__init__.py`, `src/bills_analysis/models/api_responses.py`, `src/bills_analysis/services/batch_service.py`, `src/bills_analysis/workers/worker.py`, `tests/openapi_v1_baseline.json`, `tests/test_api_schema_v1.py`
+- next: Frontend should switch Manual Review data source to GET /v1/batches/{batch_id}/review-rows and upload monthly source via /merge-source/local before queue merge
+- risk_or_note: Medium: batch is marked failed when any file extraction/semantic call fails by design; ensure frontend handles failed state and surfaces error
+- status: done

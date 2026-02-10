@@ -104,3 +104,33 @@ class CreateBatchUploadTaskResponse(StrictModel):
             status=batch.status,
             created_at=task.created_at,
         )
+
+
+class BatchReviewRow(StrictModel):
+    """One review row payload returned for manual review editing UI."""
+
+    row_id: str
+    category: str
+    filename: str
+    result: dict[str, Any] = Field(default_factory=dict)
+    score: dict[str, Any] = Field(default_factory=dict)
+    preview_url: str | None = None
+
+
+class BatchReviewRowsResponse(StrictModel):
+    """Response envelope for querying review rows of one batch."""
+
+    schema_version: Literal["v1"] = SCHEMA_VERSION
+    batch_id: str
+    status: BatchStatus
+    rows: list[BatchReviewRow] = Field(default_factory=list)
+
+
+class MergeSourceLocalResponse(StrictModel):
+    """Response returned after local monthly Excel source upload."""
+
+    schema_version: Literal["v1"] = SCHEMA_VERSION
+    batch_id: str
+    source_type: Literal["local_excel"] = "local_excel"
+    monthly_excel_path: str
+    created_at: datetime

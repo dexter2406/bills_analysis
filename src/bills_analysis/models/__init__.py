@@ -8,8 +8,11 @@ from bills_analysis.models.api_requests import (
 )
 from bills_analysis.models.api_responses import (
     BatchListResponse,
+    BatchReviewRow,
+    BatchReviewRowsResponse,
     BatchResponse,
     CreateBatchUploadTaskResponse,
+    MergeSourceLocalResponse,
     MergeTaskResponse,
 )
 from bills_analysis.models.common import ErrorInfo, InputFile
@@ -18,6 +21,8 @@ from bills_analysis.models.version import SCHEMA_VERSION
 
 __all__ = [
     "BatchListResponse",
+    "BatchReviewRow",
+    "BatchReviewRowsResponse",
     "BatchResponse",
     "BatchStatus",
     "BatchType",
@@ -27,6 +32,7 @@ __all__ = [
     "ErrorInfo",
     "InputFile",
     "MergeRequest",
+    "MergeSourceLocalResponse",
     "MergeTaskResponse",
     "SCHEMA_VERSION",
     "SubmitReviewRequest",

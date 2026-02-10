@@ -10,6 +10,7 @@ from typing import Any
 from uuid import uuid4
 
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
+from fastapi.responses import FileResponse
 from pydantic import ValidationError
 
 from bills_analysis.integrations.container import AppContainer, build_container
@@ -21,8 +22,11 @@ from bills_analysis.models.api_requests import (
 )
 from bills_analysis.models.api_responses import (
     BatchListResponse,
+    BatchReviewRow,
+    BatchReviewRowsResponse,
     BatchResponse,
     CreateBatchUploadTaskResponse,
+    MergeSourceLocalResponse,
     MergeTaskResponse,
 )
 from bills_analysis.models.common import InputFile
@@ -75,27 +79,57 @@ def _validate_pdf_upload(file: UploadFile, *, field_name: str) -> None:
         raise HTTPException(status_code=400, detail=f"{field_name} must be PDF files")
 
 
+def _validate_excel_upload(file: UploadFile, *, field_name: str) -> None:
+    """Validate filename extension and content type for uploaded Excel files."""
+
+    filename = (file.filename or "").strip().lower()
+    if not filename or not (filename.endswith(".xlsx") or filename.endswith(".xlsm")):
+        raise HTTPException(status_code=400, detail=f"{field_name} must be .xlsx or .xlsm file")
+    if file.content_type:
+        content_type = file.content_type.lower()
+        if "spreadsheetml" not in content_type and "excel" not in content_type and content_type != "application/octet-stream":
+            raise HTTPException(status_code=400, detail=f"{field_name} must be Excel file")
+
+
 async def _save_upload_file(
     file: UploadFile,
     *,
     dest_dir: Path,
     prefix: str,
     index: int,
+    forced_suffix: str | None = ".pdf",
 ) -> Path:
     """Persist one UploadFile to disk and return the saved file path."""
 
     dest_dir.mkdir(parents=True, exist_ok=True)
     safe_name = Path(file.filename or "").name or f"{prefix}_{index:02d}.pdf"
     stem = Path(safe_name).stem or f"{prefix}_{index:02d}"
-    dest_path = dest_dir / f"{index:02d}_{stem}.pdf"
+    suffix = forced_suffix
+    if suffix is None:
+        suffix = Path(safe_name).suffix or ""
+    dest_path = dest_dir / f"{index:02d}_{stem}{suffix}"
     attempt = 1
     while dest_path.exists():
-        dest_path = dest_dir / f"{index:02d}_{stem}_{attempt}.pdf"
+        dest_path = dest_dir / f"{index:02d}_{stem}_{attempt}{suffix}"
         attempt += 1
     content = await file.read()
     dest_path.write_bytes(content)
     await file.close()
     return dest_path
+
+
+def _safe_preview_path(batch_id: str, preview_path: str) -> Path:
+    """Resolve and validate preview path stays within the batch sandbox root."""
+
+    resolved = Path(preview_path).resolve()
+    allowed_root = (Path("outputs") / "webapp" / batch_id).resolve()
+    if not resolved.exists() or not resolved.is_file():
+        raise HTTPException(status_code=404, detail="preview file not found")
+    if resolved.suffix.lower() != ".pdf":
+        raise HTTPException(status_code=404, detail="preview file not found")
+    if not resolved.is_relative_to(allowed_root):
+        raise HTTPException(status_code=404, detail="preview file not found")
+    return resolved
 
 
 @app.get("/healthz")
@@ -224,6 +258,60 @@ async def get_batch(batch_id: str) -> BatchResponse:
     return BatchResponse.from_record(batch)
 
 
+@app.get("/v1/batches/{batch_id}/review-rows", response_model=BatchReviewRowsResponse)
+async def get_batch_review_rows(batch_id: str, request: Request) -> BatchReviewRowsResponse:
+    """Return persisted review rows with API-accessible PDF preview URLs."""
+
+    try:
+        batch, rows = await container.service.get_review_rows(batch_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="batch not found") from exc
+
+    base_url = str(request.base_url).rstrip("/")
+    items = []
+    for idx, row in enumerate(rows, start=1):
+        row_id = str(row.get("row_id") or f"row-{idx:04d}")
+        preview_url = None
+        if row.get("preview_path"):
+            preview_url = f"{base_url}/v1/batches/{batch_id}/files/{row_id}/preview"
+        items.append(
+            BatchReviewRow(
+                row_id=row_id,
+                category=str(row.get("category") or ""),
+                filename=str(row.get("filename") or ""),
+                result=dict(row.get("result") or {}),
+                score=dict(row.get("score") or {}),
+                preview_url=preview_url,
+            )
+        )
+    return BatchReviewRowsResponse(batch_id=batch.batch_id, status=batch.status, rows=items)
+
+
+@app.get("/v1/batches/{batch_id}/files/{file_key}/preview")
+async def get_batch_preview_pdf(batch_id: str, file_key: str) -> FileResponse:
+    """Serve one batch preview PDF by stable review row id."""
+
+    try:
+        _, rows = await container.service.get_review_rows(batch_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="batch not found") from exc
+
+    selected_row = None
+    for idx, row in enumerate(rows, start=1):
+        row_id = str(row.get("row_id") or f"row-{idx:04d}")
+        if row_id == file_key:
+            selected_row = row
+            break
+    if selected_row is None:
+        raise HTTPException(status_code=404, detail="preview file not found")
+
+    preview_raw = selected_row.get("preview_path")
+    if not preview_raw:
+        raise HTTPException(status_code=404, detail="preview file not found")
+    preview_path = _safe_preview_path(batch_id, str(preview_raw))
+    return FileResponse(path=preview_path, media_type="application/pdf", filename=preview_path.name)
+
+
 @app.put("/v1/batches/{batch_id}/review", response_model=BatchResponse)
 async def submit_review(batch_id: str, req: SubmitReviewRequest) -> BatchResponse:
     """Store human-reviewed rows for a batch."""
@@ -235,6 +323,33 @@ async def submit_review(batch_id: str, req: SubmitReviewRequest) -> BatchRespons
         raise HTTPException(status_code=404, detail="batch not found") from exc
 
 
+@app.post("/v1/batches/{batch_id}/merge-source/local", response_model=MergeSourceLocalResponse)
+async def upload_local_merge_source(
+    batch_id: str,
+    file: UploadFile = File(...),
+) -> MergeSourceLocalResponse:
+    """Upload monthly local Excel source and persist path for merge fallback usage."""
+
+    existing = await container.service.get_batch(batch_id)
+    if existing is None:
+        raise HTTPException(status_code=404, detail="batch not found")
+    _validate_excel_upload(file, field_name="file")
+    merge_source_dir = Path("outputs") / "webapp" / batch_id / "merge_source"
+    saved_path = await _save_upload_file(
+        file,
+        dest_dir=merge_source_dir,
+        prefix="monthly_source",
+        index=1,
+        forced_suffix=None,
+    )
+    batch = await container.service.save_merge_source_local(batch_id, str(saved_path.resolve()))
+    return MergeSourceLocalResponse(
+        batch_id=batch.batch_id,
+        monthly_excel_path=str(saved_path.resolve()),
+        created_at=batch.updated_at,
+    )
+
+
 @app.post("/v1/batches/{batch_id}/merge", response_model=MergeTaskResponse)
 async def queue_merge(batch_id: str, req: MergeRequest) -> MergeTaskResponse:
     """Enqueue merge task for a reviewed batch."""
@@ -244,6 +359,8 @@ async def queue_merge(batch_id: str, req: MergeRequest) -> MergeTaskResponse:
         return MergeTaskResponse.from_task(task)
     except KeyError as exc:
         raise HTTPException(status_code=404, detail="batch not found") from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 def run() -> None:
