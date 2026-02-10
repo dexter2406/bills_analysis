@@ -1,6 +1,6 @@
 ﻿import { useCallback, useEffect, useMemo, useReducer, useRef } from "react";
 import { isRunDateValid, parseCreateBatchRequest, parseMergeRequest, parseSubmitReviewRequest } from "../../../contracts/v1.schema";
-import { toErrorMessage } from "../../../lib/http";
+import { AppHttpError, toErrorMessage } from "../../../lib/http";
 import {
   initialUploadState,
   normalizeCategoryForBatch,
@@ -18,6 +18,14 @@ import {
  *    listBatches: (limit?: number) => Promise<any>;
  *    submitReview: (batchId: string, payload: unknown) => Promise<any>;
  *    queueMerge: (batchId: string, payload: unknown) => Promise<any>;
+ *    createBatchUpload?: (payload: {
+ *      files: Array<{ file: File; category: "bar" | "zbon" | "office" | null; name: string }>;
+ *      batchType: "daily" | "office";
+ *      runDate: string | null;
+ *      metadata?: Record<string, unknown>;
+ *    }) => Promise<{ batch_id: string }>;
+ *    getReviewRows?: (batchId: string) => Promise<{ rows: Array<Record<string, unknown>> } | Array<Record<string, unknown>>>;
+ *    uploadMergeSourceLocal?: (batchId: string, file: File) => Promise<{ monthly_excel_path: string }>;
  *  };
  * }} params
  */
@@ -176,6 +184,29 @@ export function useUploadFlow({ client }) {
     dispatch({ type: "SUBMIT_START" });
 
     try {
+      const metadata = {
+        source: "frontend_m1",
+        api_mode: client.mode,
+      };
+
+      if (typeof client.createBatchUpload === "function") {
+        const uploadResult = await client.createBatchUpload({
+          files: current.files.map((entry) => ({
+            file: entry.file,
+            category: entry.category,
+            name: entry.name,
+          })),
+          batchType: current.batchType,
+          runDate: current.runDate || null,
+          metadata,
+        });
+
+        const batch = await client.getBatch(uploadResult.batch_id);
+        dispatch({ type: "SUBMIT_SUCCESS", batch });
+        startPolling(batch.batch_id, 220);
+        return true;
+      }
+
       const uploaded = await client.uploadFiles(
         current.files.map((entry) => entry.file),
         { batchType: current.batchType, runDate: current.runDate || null },
@@ -190,10 +221,7 @@ export function useUploadFlow({ client }) {
         type: current.batchType,
         run_date: current.runDate || null,
         inputs,
-        metadata: {
-          source: "frontend_m1",
-          api_mode: client.mode,
-        },
+        metadata,
       });
 
       const batch = await client.createBatch(payload);
@@ -283,6 +311,64 @@ export function useUploadFlow({ client }) {
   );
 
   /**
+   * Load backend review rows when endpoint is available.
+   */
+  const fetchReviewRows = useCallback(async () => {
+    const current = stateRef.current;
+    const batchId = current.batch?.batch_id;
+    if (!batchId || typeof client.getReviewRows !== "function") {
+      return [];
+    }
+
+    dispatch({ type: "REVIEW_ROWS_LOAD_START" });
+    try {
+      const payload = await client.getReviewRows(batchId);
+      const rows = Array.isArray(payload) ? payload : Array.isArray(payload?.rows) ? payload.rows : [];
+      dispatch({ type: "REVIEW_ROWS_LOAD_SUCCESS", rows });
+      return rows;
+    } catch (error) {
+      if (error instanceof AppHttpError && error.status === 404) {
+        dispatch({ type: "REVIEW_ROWS_LOAD_FAILURE" });
+        return [];
+      }
+      dispatch({ type: "REVIEW_ROWS_LOAD_FAILURE" });
+      dispatch({ type: "SET_SYSTEM_ERROR", message: toErrorMessage(error) });
+      return [];
+    }
+  }, [client]);
+
+  /**
+   * Resolve monthly excel path via backend upload endpoint with fallback.
+   * @param {File | null} file
+   */
+  const resolveMonthlyPathFromLocal = useCallback(
+    async (file) => {
+      if (!file) {
+        return null;
+      }
+
+      const fallback = `local://${file.name}`;
+      const current = stateRef.current;
+      const batchId = current.batch?.batch_id;
+      if (!batchId || typeof client.uploadMergeSourceLocal !== "function") {
+        return fallback;
+      }
+
+      try {
+        const payload = await client.uploadMergeSourceLocal(batchId, file);
+        return payload?.monthly_excel_path || fallback;
+      } catch (error) {
+        if (error instanceof AppHttpError && error.status === 404) {
+          return fallback;
+        }
+        dispatch({ type: "SET_SYSTEM_ERROR", message: toErrorMessage(error) });
+        return null;
+      }
+    },
+    [client],
+  );
+
+  /**
    * Retry merge using last merge payload, only when batch failed.
    */
   const retryMerge = useCallback(async () => {
@@ -351,6 +437,8 @@ export function useUploadFlow({ client }) {
       submitReviewOnly,
       submitReviewRows,
       queueMergeOnly,
+      fetchReviewRows,
+      resolveMonthlyPathFromLocal,
       retryMerge,
       retryPolling,
     },
