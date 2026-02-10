@@ -33,6 +33,8 @@ export const initialUploadState = {
   batchType: "daily",
   runDate: formatRunDate(new Date()),
   files: [],
+  reviewRows: [],
+  reviewRowsLoading: false,
   batch: null,
   mergeTask: null,
   reviewSubmitted: false,
@@ -64,6 +66,8 @@ export function uploadFlowReducer(state, action) {
         ...state,
         batchType: nextType,
         files: [],
+        reviewRows: [],
+        reviewRowsLoading: false,
         batch: null,
         mergeTask: null,
         reviewSubmitted: false,
@@ -134,6 +138,8 @@ export function uploadFlowReducer(state, action) {
       return {
         ...state,
         phase: mapStatusToPhase(action.batch.status),
+        reviewRows: [],
+        reviewRowsLoading: false,
         batch: action.batch,
         mergeTask: null,
         reviewSubmitted: false,
@@ -162,6 +168,25 @@ export function uploadFlowReducer(state, action) {
         ...state,
         phase: "failed",
         systemError: action.message,
+      };
+
+    case "REVIEW_ROWS_LOAD_START":
+      return {
+        ...state,
+        reviewRowsLoading: true,
+      };
+
+    case "REVIEW_ROWS_LOAD_SUCCESS":
+      return {
+        ...state,
+        reviewRows: action.rows,
+        reviewRowsLoading: false,
+      };
+
+    case "REVIEW_ROWS_LOAD_FAILURE":
+      return {
+        ...state,
+        reviewRowsLoading: false,
       };
 
     case "REVIEW_SUBMIT_START":

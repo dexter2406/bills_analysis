@@ -65,7 +65,7 @@
 - next: Run uv sync to install new DI dependencies and rerun category pipeline with valid Azure env vars
 - risk_or_note: Medium: extraction still returns null until env has Azure DI package and credentials
 - status: done
-- 
+
 ## [2026-02-08 23:56:34] START frontend-m1
 - branch: `feat-frontend`
 - head: `30ed1b6`
@@ -80,6 +80,22 @@
 - note: Monthly Excel source switch now supports `from Local` and `from Lark` (scaffold); local maps to `local://<filename>`.
 - next: split first-version frontend commits into tooling/contracts/upload/review/docs and push for backend联调.
 - risk: Local Excel currently passes only string path token, backend has no binary upload parsing yet.
+
+## [2026-02-10 17:05:17] START frontend-m2-commit-split
+- branch: `feat-frontend`
+- head: `28997aa`
+- start_head: `28997aa`
+- worktree: `D:\CodeSpace\prj_rechnung\bills__frontend`
+- status: in_progress
+
+## [2026-02-10 17:05:43] END frontend-m2-commit-split
+- branch: `feat-frontend`
+- commit: `28997aa`
+- summary: frontend: update mock workflow semantics and harden hook tests with act and timing-safe waits to eliminate flaky async assertions
+- uncommitted_files: `SESSION_NOTES.md`
+- next: Office scenario integration and end-to-end validation in real API mode.
+- risk_or_note: Backend and frontend review-row normalization may diverge again; keep v1 payload contract strict and re-run full smoke after backend updates.
+- status: done
 
 ## [2026-02-10 15:26:00] START agent-b-m1-1-api-stabilization
 - branch: `feat-backend`

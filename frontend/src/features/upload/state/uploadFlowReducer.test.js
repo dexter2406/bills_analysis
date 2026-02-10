@@ -50,4 +50,12 @@ describe("uploadFlowReducer", () => {
     expect(next.mergeRequestPayload.mode).toBe("overwrite");
     expect(next.phase).toBe("tracking");
   });
+
+  it("stores fetched review rows payload", () => {
+    const rows = [{ row_id: "row-0001", category: "bar", filename: "a.pdf", result: {}, score: {} }];
+    const started = uploadFlowReducer(initialUploadState, { type: "REVIEW_ROWS_LOAD_START" });
+    const next = uploadFlowReducer(started, { type: "REVIEW_ROWS_LOAD_SUCCESS", rows });
+    expect(next.reviewRowsLoading).toBe(false);
+    expect(next.reviewRows).toHaveLength(1);
+  });
 });

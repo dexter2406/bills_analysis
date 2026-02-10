@@ -112,6 +112,17 @@ const mergeTaskResponseSchema = z
   })
   .strict();
 
+const createBatchUploadTaskResponseSchema = z
+  .object({
+    schema_version: schemaVersionSchema.default("v1"),
+    task_id: z.string(),
+    batch_id: z.string(),
+    type: batchTypeSchema,
+    status: batchStatusSchema,
+    created_at: z.string().datetime(),
+  })
+  .strict();
+
 /**
  * Validate and normalize CreateBatchRequest payload.
  * @param {unknown} payload
@@ -161,6 +172,14 @@ export function parseMergeTaskResponse(payload) {
 }
 
 /**
+ * Validate CreateBatchUploadTaskResponse payload.
+ * @param {unknown} payload
+ */
+export function parseCreateBatchUploadTaskResponse(payload) {
+  return createBatchUploadTaskResponseSchema.parse(payload);
+}
+
+/**
  * Runtime helper for date format validation.
  * @param {string} value
  */
@@ -179,4 +198,5 @@ export {
   batchResponseSchema,
   batchListResponseSchema,
   mergeTaskResponseSchema,
+  createBatchUploadTaskResponseSchema,
 };

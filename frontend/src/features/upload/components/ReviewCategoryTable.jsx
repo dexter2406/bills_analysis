@@ -6,9 +6,10 @@
  *  rows: Array<Record<string, string>>;
  *  columns: Array<{ key: string; label: string; readOnly?: boolean }>;
  *  onChangeCell: (rowId: string, key: string, value: string) => void;
+ *  onViewRow?: (row: Record<string, string>) => void;
  * }} props
  */
-export function ReviewCategoryTable({ title, description, rows, columns, onChangeCell }) {
+export function ReviewCategoryTable({ title, description, rows, columns, onChangeCell, onViewRow }) {
   if (!rows.length) {
     return null;
   }
@@ -49,7 +50,14 @@ export function ReviewCategoryTable({ title, description, rows, columns, onChang
                   </td>
                 ))}
                 <td>
-                  <a href="#" className="review-view-link" onClick={(event) => event.preventDefault()}>
+                  <a
+                    href="#"
+                    className="review-view-link"
+                    onClick={(event) => {
+                      event.preventDefault();
+                      onViewRow?.(row);
+                    }}
+                  >
                     View
                   </a>
                 </td>

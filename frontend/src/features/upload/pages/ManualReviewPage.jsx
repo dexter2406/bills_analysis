@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { AppFrame } from "../../../app/AppFrame";
+import { API_BASE_URL } from "../../../config/env";
 import { AlertBanner } from "../../../shared/ui/AlertBanner";
 import { Button } from "../../../shared/ui/Button";
 import { StatusBadge } from "../components/StatusBadge";
@@ -43,23 +44,47 @@ export function ManualReviewPage() {
   const { client, state, actions, flags } = useUploadFlowContext();
   const effectiveBatchType = state.batch?.type || state.batchType || "daily";
 
-  const [draft, setDraft] = useState(() => buildDraftRows(state.files, state.runDate, null));
+  const [draft, setDraft] = useState(() => buildDraftRowsFromFiles(state.files, state.runDate, null));
   const [localError, setLocalError] = useState("");
   const [monthlyPathSource, setMonthlyPathSource] = useState(SOURCE_LOCAL_FILE);
   const [selectedLocalFileName, setSelectedLocalFileName] = useState(null);
+  const [selectedLocalFile, setSelectedLocalFile] = useState(null);
   const [larkSheetLink, setLarkSheetLink] = useState("");
   const [mergeMode, setMergeMode] = useState("overwrite");
   const [monthlyPath, setMonthlyPath] = useState(state.mergeRequestPayload?.monthly_excel_path || DEFAULT_MONTHLY_EXCEL_PATH);
+  const previewUrlCacheRef = useRef(new Map());
 
   useEffect(() => {
-    setDraft((previous) => buildDraftRows(state.files, state.runDate, previous));
-  }, [state.files, state.runDate]);
+    setDraft((previous) => {
+      if (state.reviewRows.length) {
+        return buildDraftRowsFromBackend(state.reviewRows, state.runDate, previous);
+      }
+      return buildDraftRowsFromFiles(state.files, state.runDate, previous);
+    });
+  }, [state.files, state.reviewRows, state.runDate]);
 
   useEffect(() => {
     const nextMode = effectiveBatchType === "daily" ? "overwrite" : state.mergeRequestPayload?.mode || "overwrite";
     setMergeMode(nextMode);
     setMonthlyPath(state.mergeRequestPayload?.monthly_excel_path || DEFAULT_MONTHLY_EXCEL_PATH);
   }, [effectiveBatchType, state.mergeRequestPayload?.mode, state.mergeRequestPayload?.monthly_excel_path]);
+
+  useEffect(
+    () => () => {
+      for (const objectUrl of previewUrlCacheRef.current.values()) {
+        URL.revokeObjectURL(objectUrl);
+      }
+      previewUrlCacheRef.current.clear();
+    },
+    [],
+  );
+
+  useEffect(() => {
+    if (!state.batch?.batch_id || state.batch.status !== "review_ready") {
+      return;
+    }
+    void actions.fetchReviewRows();
+  }, [actions.fetchReviewRows, state.batch?.batch_id, state.batch?.status]);
 
   const onChangeCell = useCallback((section, rowId, key, value) => {
     setDraft((previous) => ({
@@ -103,15 +128,26 @@ export function ManualReviewPage() {
       return;
     }
 
+    let resolvedMonthlyPath = monthlyPath.trim();
+    if (monthlyPathSource === SOURCE_LOCAL_FILE && selectedLocalFile) {
+      const uploadedPath = await actions.resolveMonthlyPathFromLocal(selectedLocalFile);
+      if (!uploadedPath) {
+        setLocalError("Local monthly excel source upload failed. Please retry.");
+        return;
+      }
+      resolvedMonthlyPath = uploadedPath;
+      setMonthlyPath(uploadedPath);
+    }
+
     const mergeOk = await actions.queueMergeOnly({
       mode: effectiveBatchType === "daily" ? "overwrite" : mergeMode,
-      monthly_excel_path: monthlyPath.trim(),
+      monthly_excel_path: resolvedMonthlyPath,
       metadata: monthlyPathSource === SOURCE_LARK_SHEET ? { lark_sheet_link: larkSheetLink.trim() } : {},
     });
     if (!mergeOk) {
       setLocalError("Review saved, but merge queue failed. Please retry.");
     }
-  }, [actions, draft, effectiveBatchType, larkSheetLink, mergeMode, monthlyPath, monthlyPathSource]);
+  }, [actions, draft, effectiveBatchType, larkSheetLink, mergeMode, monthlyPath, monthlyPathSource, selectedLocalFile]);
 
   const onRetryMerge = useCallback(async () => {
     setLocalError("");
@@ -126,10 +162,43 @@ export function ManualReviewPage() {
     if (!selected) {
       return;
     }
+    setSelectedLocalFile(selected);
     setSelectedLocalFileName(selected.name);
     setMonthlyPath(`local://${selected.name}`);
     setMonthlyPathSource(SOURCE_LOCAL_FILE);
   }, []);
+
+  const onViewRow = useCallback(
+    (row) => {
+      if (typeof row.preview_url === "string" && /^https?:\/\//i.test(row.preview_url)) {
+        window.open(row.preview_url, "_blank", "noopener,noreferrer");
+        return;
+      }
+
+      const fileEntry = state.files.find((entry) => entry.id === row.id || entry.name === row.filename);
+      if (fileEntry?.file) {
+        let objectUrl = previewUrlCacheRef.current.get(fileEntry.id);
+        if (!objectUrl) {
+          objectUrl = URL.createObjectURL(fileEntry.file);
+          previewUrlCacheRef.current.set(fileEntry.id, objectUrl);
+        }
+        window.open(objectUrl, "_blank", "noopener,noreferrer");
+        return;
+      }
+
+      const fallbackPath =
+        (typeof row.preview_path === "string" ? row.preview_path : "") ||
+        findBatchInputPathByFilename(state.batch?.inputs || [], row.filename) ||
+        (typeof row.path === "string" ? row.path : "");
+      if (fallbackPath) {
+        window.open(toPreviewHref(fallbackPath), "_blank", "noopener,noreferrer");
+        return;
+      }
+
+      setLocalError("Preview is unavailable for this row.");
+    },
+    [state.batch?.inputs, state.files],
+  );
 
   return (
     <AppFrame>
@@ -164,6 +233,7 @@ export function ManualReviewPage() {
         {state.batch && state.batch.status !== "review_ready" ? (
           <AlertBanner message={`Batch is ${state.batch.status}. Submit is enabled only when status is review_ready.`} />
         ) : null}
+        {state.reviewRowsLoading ? <AlertBanner message="Loading review rows from backend..." /> : null}
 
         <ReviewCategoryTable
           title="BAR Review Items"
@@ -171,6 +241,7 @@ export function ManualReviewPage() {
           rows={draft.bar}
           columns={barColumns}
           onChangeCell={(rowId, key, value) => onChangeCell("bar", rowId, key, value)}
+          onViewRow={onViewRow}
         />
 
         <ReviewCategoryTable
@@ -179,6 +250,7 @@ export function ManualReviewPage() {
           rows={draft.zbon}
           columns={zbonColumns}
           onChangeCell={(rowId, key, value) => onChangeCell("zbon", rowId, key, value)}
+          onViewRow={onViewRow}
         />
 
         <ReviewCategoryTable
@@ -187,6 +259,7 @@ export function ManualReviewPage() {
           rows={draft.office}
           columns={officeColumns}
           onChangeCell={(rowId, key, value) => onChangeCell("office", rowId, key, value)}
+          onViewRow={onViewRow}
         />
 
         <section className="ledger-card p-4">
@@ -294,7 +367,7 @@ export function ManualReviewPage() {
  * @param {string} runDate
  * @param {{ bar: Array<Record<string, string>>; zbon: Array<Record<string, string>>; office: Array<Record<string, string>> } | null} previous
  */
-function buildDraftRows(files, runDate, previous) {
+function buildDraftRowsFromFiles(files, runDate, previous) {
   const previousMap = new Map();
 
   if (previous) {
@@ -318,6 +391,10 @@ function buildDraftRows(files, runDate, previous) {
         brutto: current?.brutto ?? "-",
         netto: current?.netto ?? "-",
         run_date: current?.run_date ?? runDate ?? "-",
+        score: current?.score ?? {},
+        raw_result: current?.raw_result ?? {},
+        preview_path: current?.preview_path ?? "",
+        preview_url: current?.preview_url ?? "",
       });
       continue;
     }
@@ -331,6 +408,10 @@ function buildDraftRows(files, runDate, previous) {
         brutto: current?.brutto ?? "-",
         netto: current?.netto ?? "-",
         run_date: current?.run_date ?? runDate ?? "-",
+        score: current?.score ?? {},
+        raw_result: current?.raw_result ?? {},
+        preview_path: current?.preview_path ?? "",
+        preview_url: current?.preview_url ?? "",
       });
       continue;
     }
@@ -346,9 +427,85 @@ function buildDraftRows(files, runDate, previous) {
         netto: current?.netto ?? "-",
         tax_id: current?.tax_id ?? "-",
         receiver: current?.receiver ?? "-",
+        score: current?.score ?? {},
+        raw_result: current?.raw_result ?? {},
+        preview_path: current?.preview_path ?? "",
+        preview_url: current?.preview_url ?? "",
       });
     }
   }
+
+  return draft;
+}
+
+/**
+ * Build editable rows from backend review rows payload.
+ * @param {Array<Record<string, unknown>>} rows
+ * @param {string} runDate
+ * @param {{ bar: Array<Record<string, string>>; zbon: Array<Record<string, string>>; office: Array<Record<string, string>> } | null} previous
+ */
+function buildDraftRowsFromBackend(rows, runDate, previous) {
+  const previousMap = new Map();
+
+  if (previous) {
+    for (const section of ["bar", "zbon", "office"]) {
+      for (const row of previous[section]) {
+        previousMap.set(row.id, row);
+      }
+    }
+  }
+
+  const draft = { bar: [], zbon: [], office: [] };
+
+  rows.forEach((row, index) => {
+    const category = String(row.category || "").toLowerCase();
+    const filename = normalizeCellValue(row.filename, "-");
+    const rowId = normalizeCellValue(row.row_id, `${category || "unknown"}:${filename}:${index}`);
+    const result = row.result && typeof row.result === "object" ? row.result : {};
+    const current = previousMap.get(rowId);
+    const common = {
+      id: rowId,
+      category,
+      filename,
+      preview_url: normalizeCellValue(row.preview_url, ""),
+      preview_path: normalizeCellValue(row.preview_path, ""),
+      path: normalizeCellValue(row.path, ""),
+      score: row.score && typeof row.score === "object" ? row.score : {},
+      raw_result: result,
+    };
+
+    if (category === "bar") {
+      draft.bar.push({
+        ...common,
+        store_name: current?.store_name ?? normalizeCellValue(result.store_name),
+        brutto: current?.brutto ?? normalizeCellValue(result.brutto),
+        netto: current?.netto ?? normalizeCellValue(result.netto),
+        run_date: current?.run_date ?? normalizeCellValue(result.run_date, runDate || "-"),
+      });
+      return;
+    }
+
+    if (category === "zbon") {
+      draft.zbon.push({
+        ...common,
+        brutto: current?.brutto ?? normalizeCellValue(result.brutto),
+        netto: current?.netto ?? normalizeCellValue(result.netto),
+        run_date: current?.run_date ?? normalizeCellValue(result.run_date, runDate || "-"),
+      });
+      return;
+    }
+
+    if (category === "office") {
+      draft.office.push({
+        ...common,
+        sender: current?.sender ?? normalizeCellValue(result.sender),
+        brutto: current?.brutto ?? normalizeCellValue(result.brutto),
+        netto: current?.netto ?? normalizeCellValue(result.netto),
+        tax_id: current?.tax_id ?? normalizeCellValue(result.tax_id),
+        receiver: current?.receiver ?? normalizeCellValue(result.receiver),
+      });
+    }
+  });
 
   return draft;
 }
@@ -358,9 +515,46 @@ function buildDraftRows(files, runDate, previous) {
  * @param {{ bar: Array<Record<string, string>>; zbon: Array<Record<string, string>>; office: Array<Record<string, string>> }} draft
  */
 function composeReviewRows(draft) {
-  return [...draft.bar, ...draft.zbon, ...draft.office].map((row) => ({
-    ...row,
-  }));
+  return [...draft.bar, ...draft.zbon, ...draft.office]
+    .map((row) => {
+      const category = String(row.category || "").toLowerCase();
+      const baseResult = row.raw_result && typeof row.raw_result === "object" ? { ...row.raw_result } : {};
+
+      if (category === "bar") {
+        baseResult.store_name = row.store_name;
+        baseResult.brutto = row.brutto;
+        baseResult.netto = row.netto;
+        baseResult.run_date = row.run_date;
+      } else if (category === "zbon") {
+        baseResult.brutto = row.brutto;
+        baseResult.netto = row.netto;
+        baseResult.run_date = row.run_date;
+      } else if (category === "office") {
+        baseResult.sender = row.sender;
+        baseResult.brutto = row.brutto;
+        baseResult.netto = row.netto;
+        baseResult.tax_id = row.tax_id;
+        baseResult.receiver = row.receiver;
+      }
+
+      const payload = {
+        row_id: row.id,
+        category,
+        filename: row.filename,
+        result: baseResult,
+        score: row.score && typeof row.score === "object" ? row.score : {},
+      };
+
+      const previewPathCandidate = [row.preview_path, row.path].find(
+        (value) => typeof value === "string" && value.trim() && value.trim() !== "-",
+      );
+      if (previewPathCandidate) {
+        payload.preview_path = previewPathCandidate;
+      }
+
+      return payload;
+    })
+    .filter((row) => Boolean(row.category) && Boolean(row.filename));
 }
 
 /**
@@ -374,4 +568,50 @@ function isValidHttpUrl(value) {
   } catch {
     return false;
   }
+}
+
+/**
+ * Find batch input path by fuzzy filename match.
+ * @param {Array<{ path?: string }>} inputs
+ * @param {string} filename
+ */
+function findBatchInputPathByFilename(inputs, filename) {
+  const target = String(filename || "").toLowerCase();
+  if (!target) {
+    return "";
+  }
+  const matched = inputs.find((entry) => String(entry?.path || "").toLowerCase().includes(target));
+  return matched?.path || "";
+}
+
+/**
+ * Convert backend/local path to browser-openable URL.
+ * @param {string} rawPath
+ */
+function toPreviewHref(rawPath) {
+  const value = String(rawPath || "").trim();
+  if (!value) {
+    return "";
+  }
+  if (/^https?:\/\//i.test(value)) {
+    return value;
+  }
+  if (/^[a-zA-Z]:\\/.test(value)) {
+    return `file:///${value.replace(/\\/g, "/")}`;
+  }
+  const normalized = value.replace(/^\.?[\\/]+/, "").replace(/\\/g, "/");
+  return `${API_BASE_URL}/${normalized}`;
+}
+
+/**
+ * Normalize input values to editable table cell text.
+ * @param {unknown} value
+ * @param {string} [fallback]
+ */
+function normalizeCellValue(value, fallback = "-") {
+  if (value === null || value === undefined) {
+    return fallback;
+  }
+  const text = String(value).trim();
+  return text || fallback;
 }
