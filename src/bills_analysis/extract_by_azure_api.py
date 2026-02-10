@@ -160,11 +160,12 @@ def analyze_document_with_azure(
 
     # 根据调用前判断好的 model_id 进行分析
     # print("[Azure] begin analyze")
+    di_timeout_sec = float(os.getenv("DI_TIMEOUT_SEC", "120"))
     poller = client.begin_analyze_document(
         model_id, 
         AnalyzeDocumentRequest(bytes_source=file_content)
     )
-    result = poller.result()
+    result = poller.result(timeout=di_timeout_sec)
     # print(json.dumps(result.as_dict(), indent=2))
     print(f"[Azure] Finished documents_count={len(result.documents) if result.documents else 0}")
 
@@ -378,6 +379,7 @@ def extract_office_invoice_azure(distilled_data: dict):
         }
     """
 
+    aoai_timeout_sec = float(os.getenv("AOAI_TIMEOUT_SEC", "60"))
     response = client.chat.completions.create(
         model="gpt-4o-mini", # 这里填你的 Deployment Name
         messages=[
@@ -386,6 +388,7 @@ def extract_office_invoice_azure(distilled_data: dict):
         ],
         response_format={"type": "json_object"},
         temperature=0.0,
+        timeout=aoai_timeout_sec,
     )
     content = response.choices[0].message.content or "{}"
 

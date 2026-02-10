@@ -48,6 +48,8 @@ Local backend CLI skeleton for the invoice Azure API extraction PoC.
   `uv sync --extra web`
 - Start API (includes inline local worker by default):  
   `uv run invoice-web-api`
+- Dev CORS origins (default): `http://127.0.0.1:5173,http://localhost:5173`
+  - Override with env: `CORS_ALLOW_ORIGINS=http://127.0.0.1:5173,http://localhost:5173`
 - Health check:  
   `GET http://127.0.0.1:8000/healthz`
 - Create batch:  
@@ -69,13 +71,28 @@ Local backend CLI skeleton for the invoice Azure API extraction PoC.
   - Common fields: `type`, `run_date`, `metadata_json`
   - `daily`: required single `zbon_file`, optional multiple `bar_files`
   - `office`: required multiple `office_files`
+- Query review rows for Manual Review page:  
+  `GET /v1/batches/{batch_id}/review-rows`
+- Open one preview PDF in browser:  
+  `GET /v1/batches/{batch_id}/files/{row_id}/preview`
 - Submit reviewed rows:  
   `PUT /v1/batches/{batch_id}/review`
+- Upload local monthly excel source for merge fallback:  
+  `POST /v1/batches/{batch_id}/merge-source/local` (multipart field: `file`)
 - Queue merge:  
   `POST /v1/batches/{batch_id}/merge`
+  - `monthly_excel_path` can be omitted if already uploaded through `/merge-source/local`
+
+Recommended frontend flow:
+1. `POST /v1/batches/upload`
+2. Poll `GET /v1/batches/{batch_id}` until `status=review_ready`
+3. Fetch `GET /v1/batches/{batch_id}/review-rows`
+4. Submit edits with `PUT /v1/batches/{batch_id}/review`
+5. Upload monthly source `POST /v1/batches/{batch_id}/merge-source/local`
+6. Queue merge with `POST /v1/batches/{batch_id}/merge`
 
 Notes:
-- Current backend adapter runs preprocess + Azure extraction flow and writes artifacts under `outputs/webapp/{batch_id}/`.
+- Current backend adapter runs preprocess + Azure extraction flow in worker threads and writes artifacts under `outputs/webapp/{batch_id}/`.
 - Queue/repository are in-memory implementations; replace them with Azure Queue + persistent store later without changing API/use-case signatures.
 - Legacy commands under `tests/*.py` are kept as thin wrappers; core business logic is migrated to `src/bills_analysis/services/` and `src/bills_analysis/integrations/`.
 

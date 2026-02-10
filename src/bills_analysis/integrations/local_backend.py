@@ -1,12 +1,19 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
+import asyncio
 import json
+import os
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from openpyxl import Workbook
+
+from bills_analysis.excel_ops import normalize_date, write_datum_cell
+from bills_analysis.integrations.excel_mapper_adapter import map_daily_json_to_excel
 from bills_analysis.models.common import InputFile
 from bills_analysis.models.internal import BatchRecord
+from bills_analysis.services.merge_service import merge_daily, merge_office
 
 
 def _compress_pdf_for_archive(
@@ -61,16 +68,36 @@ def _extract_office_semantics(distilled_fields: dict[str, Any]) -> dict[str, Any
     return extract_office_invoice_azure(distilled_fields)
 
 
+def _to_excel_hyperlink(value: Any) -> str | None:
+    """Convert local or remote preview values into an Excel hyperlink target."""
+
+    if value is None:
+        return None
+    text = str(value).strip()
+    if not text:
+        return None
+    if text.startswith("http://") or text.startswith("https://"):
+        return text
+    path = Path(text)
+    if not path.is_absolute():
+        path = path.resolve()
+    try:
+        return path.as_uri()
+    except ValueError:
+        return str(path)
+
+
 class LocalPipelineBackend:
     """Local backend adapter that executes preprocess + extraction flow."""
 
     def __init__(self, *, root: Path | None = None) -> None:
-        """Initialize output root for batch artifacts."""
+        """Initialize output root and per-file timeout controls."""
 
         self.root = root or Path("outputs") / "webapp"
+        self.file_timeout_sec = float(os.getenv("BACKEND_FILE_TIMEOUT_SEC", "180"))
 
     async def process_batch(self, batch: BatchRecord) -> dict[str, Any]:
-        """Process uploaded PDFs and emit result/review artifacts."""
+        """Process uploaded PDFs and return artifacts plus persisted review rows."""
 
         out_dir = self.root / batch.batch_id
         out_dir.mkdir(parents=True, exist_ok=True)
@@ -80,7 +107,27 @@ class LocalPipelineBackend:
         now = datetime.now(UTC).isoformat()
         results_path = out_dir / "results.json"
         review_path = out_dir / "review_rows.json"
-        rows = [self._process_one_file(batch=batch, item=item, archive_root=archive_root) for item in batch.inputs]
+
+        tasks = [
+            self._process_one_file_async(
+                row_id=f"row-{idx:04d}",
+                batch=batch,
+                item=item,
+                archive_root=archive_root,
+            )
+            for idx, item in enumerate(batch.inputs, start=1)
+        ]
+        rows = await asyncio.gather(*tasks)
+
+        errors = []
+        for row in rows:
+            if self._row_has_external_failure(row):
+                errors.append(
+                    f"{row.get('filename', 'unknown')}: "
+                    f"{row.get('extract_error') or row.get('semantic_error') or row.get('error')}"
+                )
+        if errors:
+            raise RuntimeError("; ".join(errors))
 
         results_payload = {
             "batch_id": batch.batch_id,
@@ -92,6 +139,7 @@ class LocalPipelineBackend:
         }
         review_payload = [
             {
+                "row_id": row["row_id"],
                 "filename": row["filename"],
                 "category": row["category"],
                 "result": row["result"],
@@ -109,14 +157,50 @@ class LocalPipelineBackend:
             encoding="utf-8",
         )
         return {
-            "result_json_path": str(results_path),
-            "review_json_path": str(review_path),
-            "archive_root": str(archive_root),
+            "artifacts": {
+                "result_json_path": str(results_path),
+                "review_json_path": str(review_path),
+                "archive_root": str(archive_root),
+            },
+            "review_rows": review_payload,
         }
+
+    async def _process_one_file_async(
+        self,
+        *,
+        row_id: str,
+        batch: BatchRecord,
+        item: InputFile,
+        archive_root: Path,
+    ) -> dict[str, Any]:
+        """Execute one file processing in thread pool with timeout guard."""
+
+        try:
+            return await asyncio.wait_for(
+                asyncio.to_thread(
+                    self._process_one_file,
+                    row_id=row_id,
+                    batch=batch,
+                    item=item,
+                    archive_root=archive_root,
+                ),
+                timeout=self.file_timeout_sec,
+            )
+        except asyncio.TimeoutError:
+            source_name = Path(item.path).name
+            return {
+                "row_id": row_id,
+                "filename": source_name,
+                "category": (item.category or "office").lower(),
+                "result": {"run_date": batch.run_date},
+                "score": {},
+                "extract_error": f"file processing timeout ({self.file_timeout_sec}s)",
+            }
 
     def _process_one_file(
         self,
         *,
+        row_id: str,
         batch: BatchRecord,
         item: InputFile,
         archive_root: Path,
@@ -126,6 +210,7 @@ class LocalPipelineBackend:
         source_path = Path(item.path)
         category = (item.category or "office").lower()
         row: dict[str, Any] = {
+            "row_id": row_id,
             "filename": source_path.name,
             "category": category,
             "result": {"run_date": batch.run_date},
@@ -206,18 +291,47 @@ class LocalPipelineBackend:
         except Exception as exc:
             row["semantic_error"] = str(exc)
 
+    def _row_has_external_failure(self, row: dict[str, Any]) -> bool:
+        """Return whether row contains extraction/semantic external-call failures."""
+
+        return bool(row.get("error") or row.get("extract_error") or row.get("semantic_error"))
+
     async def merge_batch(self, batch: BatchRecord, payload: dict[str, Any]) -> dict[str, Any]:
-        """Generate merge summary artifact for current local adapter."""
+        """Run real local Excel merge and return merged file artifact metadata."""
 
         out_dir = self.root / batch.batch_id
         out_dir.mkdir(parents=True, exist_ok=True)
-        merged_path = out_dir / "merge_summary.json"
-        merged_path.write_text(
+
+        monthly_excel_path = payload.get("monthly_excel_path")
+        if not monthly_excel_path:
+            raise ValueError("monthly_excel_path is required for merge")
+        monthly_excel = Path(str(monthly_excel_path))
+        if not monthly_excel.exists():
+            raise ValueError(f"monthly_excel_path not found: {monthly_excel}")
+
+        validated_excel = out_dir / f"validated_for_merge_{int(datetime.now().timestamp())}.xlsx"
+        if batch.batch_type.value == "daily":
+            self._write_daily_validated_excel(batch, validated_excel)
+            merged_excel = merge_daily(validated_excel, monthly_excel, out_dir=out_dir)
+        else:
+            append_mode = str(payload.get("mode", "overwrite")) == "append"
+            self._write_office_validated_excel(batch, validated_excel)
+            merged_excel = merge_office(
+                validated_excel,
+                monthly_excel,
+                out_dir=out_dir,
+                append=append_mode,
+            )
+
+        merge_summary_path = out_dir / "merge_summary.json"
+        merge_summary_path.write_text(
             json.dumps(
                 {
                     "batch_id": batch.batch_id,
                     "mode": payload.get("mode", "overwrite"),
-                    "monthly_excel_path": payload.get("monthly_excel_path"),
+                    "monthly_excel_path": str(monthly_excel),
+                    "validated_excel_path": str(validated_excel),
+                    "merged_excel_path": str(merged_excel),
                     "review_rows_count": len(batch.review_rows),
                     "generated_at": datetime.now(UTC).isoformat(),
                 },
@@ -226,4 +340,89 @@ class LocalPipelineBackend:
             ),
             encoding="utf-8",
         )
-        return {"merge_summary_path": str(merged_path)}
+        return {
+            "merge_summary_path": str(merge_summary_path),
+            "validated_excel_path": str(validated_excel),
+            "merged_excel_path": str(merged_excel),
+        }
+
+    def _write_daily_validated_excel(self, batch: BatchRecord, out_path: Path) -> None:
+        """Build daily validated workbook from review rows using legacy mapper style logic."""
+
+        items = []
+        for row in batch.review_rows:
+            category = str(row.get("category") or "").lower()
+            if category not in {"bar", "zbon"}:
+                continue
+            result = dict(row.get("result") or {})
+            if not result.get("run_date") and batch.run_date:
+                result["run_date"] = batch.run_date
+            items.append(
+                {
+                    "category": category,
+                    "filename": row.get("filename"),
+                    "result": result,
+                    "score": row.get("score") or {},
+                    "preview_path": row.get("preview_path") or row.get("preview_url"),
+                }
+            )
+
+        if not items:
+            raise ValueError("No daily review rows available for merge")
+        temp_json_path = out_path.with_suffix(".rows.json")
+        temp_json_path.write_text(json.dumps(items, ensure_ascii=False, indent=2), encoding="utf-8")
+        map_daily_json_to_excel(
+            temp_json_path,
+            excel_path=out_path,
+            config_path=Path("tests") / "config.json",
+        )
+
+    def _write_office_validated_excel(self, batch: BatchRecord, out_path: Path) -> None:
+        """Build office validated workbook from current review rows."""
+
+        headers = [
+            "Datum",
+            "Type",
+            "Rechnung Name",
+            "Brutto",
+            "Netto",
+            "Steuernummer",
+            "Is Receiver OK",
+            "need review",
+            "Rechnung Scannen",
+        ]
+        wb = Workbook()
+        ws = wb.active
+        ws.title = "Office"
+        ws.append(headers)
+
+        row_idx = 2
+        for row in batch.review_rows:
+            if str(row.get("category") or "").lower() != "office":
+                continue
+            result = row.get("result") or {}
+            datum = normalize_date(result.get("run_date") or batch.run_date) or (batch.run_date or "")
+            excel_row = [
+                datum,
+                result.get("type"),
+                result.get("sender"),
+                result.get("brutto"),
+                result.get("netto"),
+                result.get("tax_id"),
+                result.get("receiver_ok"),
+                bool(row.get("need review", False)),
+                row.get("preview_path") or row.get("preview_url"),
+            ]
+            ws.append(excel_row)
+            write_datum_cell(ws.cell(row=row_idx, column=1), datum)
+            link = _to_excel_hyperlink(excel_row[8])
+            if link:
+                link_cell = ws.cell(row=row_idx, column=9)
+                link_cell.value = "check pdf"
+                link_cell.hyperlink = link
+            row_idx += 1
+
+        if row_idx == 2:
+            raise ValueError("No office review rows available for merge")
+
+        wb.save(out_path)

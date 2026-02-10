@@ -2,7 +2,6 @@
 
 半自动会话记录：`start` 自动记录会话开始，`end` 自动记录最近一次提交并附人工 next。
 
-<<<<<<< HEAD
 ## [2026-02-08 22:44:51] START agent-b-m1-multipart
 - branch: `feat-backend`
 - head: `30ed1b6`
@@ -66,7 +65,7 @@
 - next: Run uv sync to install new DI dependencies and rerun category pipeline with valid Azure env vars
 - risk_or_note: Medium: extraction still returns null until env has Azure DI package and credentials
 - status: done
-=======
+- 
 ## [2026-02-08 23:56:34] START frontend-m1
 - branch: `feat-frontend`
 - head: `30ed1b6`
@@ -81,4 +80,51 @@
 - note: Monthly Excel source switch now supports `from Local` and `from Lark` (scaffold); local maps to `local://<filename>`.
 - next: split first-version frontend commits into tooling/contracts/upload/review/docs and push for backend联调.
 - risk: Local Excel currently passes only string path token, backend has no binary upload parsing yet.
->>>>>>> feat-frontend
+
+## [2026-02-10 15:26:00] START agent-b-m1-1-api-stabilization
+- branch: `feat-backend`
+- head: `8d64dc2`
+- start_head: `8d64dc2`
+- worktree: `D:\CodeSpace\prj_rechnung\bills_analysis_backend`
+- status: in_progress
+
+## [2026-02-10 15:33:55] END agent-b-m1-1-api-stabilization
+- branch: `feat-backend`
+- commit: `8d64dc2`
+- summary: chore: fix text conflict
+- uncommitted_files: `README.md`, `SESSION_NOTES.md`, `src/bills_analysis/api/main.py`, `src/bills_analysis/extract_by_azure_api.py`, `src/bills_analysis/integrations/local_backend.py`, `src/bills_analysis/models/__init__.py`, `src/bills_analysis/models/api_responses.py`, `src/bills_analysis/services/batch_service.py`, `src/bills_analysis/workers/worker.py`, `tests/openapi_v1_baseline.json`, `tests/test_api_schema_v1.py`
+- next: Frontend should switch Manual Review data source to GET /v1/batches/{batch_id}/review-rows and upload monthly source via /merge-source/local before queue merge
+- risk_or_note: Medium: batch is marked failed when any file extraction/semantic call fails by design; ensure frontend handles failed state and surfaces error
+- status: done
+
+## [2026-02-10 15:59:29] START agent-b-fix-cors-preflight
+- branch: `feat-backend`
+- head: `16340bd`
+- start_head: `16340bd`
+- worktree: `D:\CodeSpace\prj_rechnung\bills_analysis_backend`
+- status: in_progress
+
+## [2026-02-10 16:00:50] END agent-b-fix-cors-preflight
+- branch: `feat-backend`
+- commit: `16340bd`
+- summary: backend: add M1.1 integration APIs for review rows, preview serving, and local merge source upload; stabilize async worker processing with timeout and failed-state propagation; enable real Excel merge output with monthly source fallback
+- uncommitted_files: `README.md`, `SESSION_NOTES.md`, `src/bills_analysis/api/main.py`, `tests/test_api_schema_v1.py`
+- next: Frontend rerun createBatch JSON flow and verify OPTIONS preflight no longer returns 405
+- risk_or_note: Low risk: CORS middleware only affects cross-origin headers and preflight handling
+- status: done
+
+## [2026-02-10 16:38:24] START agent-b-fix-review-sync-merge-output
+- branch: `feat-backend`
+- head: `34add3f`
+- start_head: `34add3f`
+- worktree: `D:\CodeSpace\prj_rechnung\bills_analysis_backend`
+- status: in_progress
+
+## [2026-02-10 16:38:33] END agent-b-fix-review-sync-merge-output
+- branch: `feat-backend`
+- commit: `34add3f`
+- summary: backend: add configurable CORS middleware for FastAPI to handle preflight OPTIONS requests, unblock cross-origin createBatch flow from frontend dev hosts, and extend API schema tests/docs for CORS headers and behavior
+- uncommitted_files: `SESSION_NOTES.md`, `src/bills_analysis/api/main.py`, `src/bills_analysis/integrations/local_backend.py`, `src/bills_analysis/services/batch_service.py`, `tests/test_api_schema_v1.py`
+- next: Frontend should submit nested result payload per row; if sending flattened fields, backend now normalizes but should migrate client to canonical shape
+- risk_or_note: Low-medium: stricter review validation now returns 422 for rows without usable result fields; verify frontend error handling
+- status: done

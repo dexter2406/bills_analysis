@@ -41,7 +41,10 @@ class BatchWorker:
                 batch.status = BatchStatus.RUNNING
                 batch.updated_at = datetime.now(UTC)
                 await self.repo.save(batch)
-                artifacts = await self.backend.process_batch(batch)
+                process_output = await self.backend.process_batch(batch)
+                review_rows = process_output.get("review_rows", [])
+                artifacts = process_output.get("artifacts", process_output)
+                batch.review_rows = review_rows
                 batch.artifacts.update(artifacts)
                 batch.status = BatchStatus.REVIEW_READY
                 batch.error = None
