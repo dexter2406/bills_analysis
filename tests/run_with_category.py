@@ -3,53 +3,13 @@ from __future__ import annotations
 import argparse
 from datetime import datetime
 from pathlib import Path
-from typing import Iterable
 
-from vlm_pipeline_api import ROOT_DIR, run_pipeline
-
-
-def _collect_pdfs(paths: Iterable[str], input_dir: Path | None) -> list[str]:
-    pdfs = list(paths)
-    if input_dir is None:
-        return pdfs
-    if not input_dir.exists():
-        raise FileNotFoundError(f"目录不存在: {input_dir}")
-    if not input_dir.is_dir():
-        raise NotADirectoryError(f"不是目录: {input_dir}")
-    dir_pdfs = sorted(
-        (p for p in input_dir.iterdir() if p.is_file() and p.suffix.lower() == ".pdf"),
-        key=lambda p: p.name,
-    )
-    pdfs.extend(str(p) for p in dir_pdfs)
-    return pdfs
-
-
-def _run_category(
-    label: str,
-    pdfs: list[str],
-    *,
-    output_root: Path,
-    backup_dest_dir: Path,
-    run_date: str,
-    results_dir: Path | None,
-    results_path: Path,
-) -> None:
-    if not pdfs:
-        return
-    print(f"[{label}] 输入数量: {len(pdfs)}")
-    run_pipeline(
-        pdfs,
-        output_root=output_root,
-        backup_dest_dir=backup_dest_dir,
-        category=label,
-        run_date=run_date,
-        results_dir=results_dir,
-        results_path=results_path,
-        dpi=300,
-    )
+from bills_analysis.services.process_service import ROOT_DIR, collect_pdfs, run_pipeline_by_category
 
 
 def main() -> None:
+    """CLI wrapper for category-based pipeline execution via src service layer."""
+
     parser = argparse.ArgumentParser(
         description="Run pipeline for BAR and ZBon in one run and merge into one JSON."
     )
@@ -80,52 +40,18 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    bar_pdfs = _collect_pdfs(args.bar, args.bar_dir)
-    zbon_pdfs = _collect_pdfs(args.zbon, args.zbon_dir)
-    office_pdfs = _collect_pdfs(args.office, args.office_dir)
+    bar_pdfs = collect_pdfs(args.bar, args.bar_dir)
+    zbon_pdfs = collect_pdfs(args.zbon, args.zbon_dir)
+    office_pdfs = collect_pdfs(args.office, args.office_dir)
 
-    if not bar_pdfs and not zbon_pdfs and not office_pdfs:
-        print("必须提供 BAR/ZBon 或 OFFICE 的 PDF（或目录）。")
-        raise SystemExit(1)
-    if office_pdfs and (bar_pdfs or zbon_pdfs):
-        print("OFFICE 与 BAR/ZBon 互斥，请单独运行。")
-        raise SystemExit(1)
-
-    output_root = ROOT_DIR / "outputs" / "vlm_pipeline"
-    timestamp = int(datetime.now().timestamp())
-    results_dir = args.results_dir or output_root
-    results_path = results_dir / f"results_{timestamp}.json"
-
-    if office_pdfs:
-        _run_category(
-            "OFFICE",
-            office_pdfs,
-            output_root=output_root,
-            backup_dest_dir=args.backup_dest_dir,
-            run_date=args.run_date,
-            results_dir=results_dir,
-            results_path=results_path,
-        )
-    else:
-        _run_category(
-            "BAR",
-            bar_pdfs,
-            output_root=output_root,
-            backup_dest_dir=args.backup_dest_dir,
-            run_date=args.run_date,
-            results_dir=results_dir,
-            results_path=results_path,
-        )
-        _run_category(
-            "ZBon",
-            zbon_pdfs,
-            output_root=output_root,
-            backup_dest_dir=args.backup_dest_dir,
-            run_date=args.run_date,
-            results_dir=results_dir,
-            results_path=results_path,
-        )
-
+    results_path = run_pipeline_by_category(
+        bar_pdfs=bar_pdfs,
+        zbon_pdfs=zbon_pdfs,
+        office_pdfs=office_pdfs,
+        backup_dest_dir=args.backup_dest_dir,
+        run_date=args.run_date,
+        results_dir=args.results_dir,
+    )
     print(f"检测结果已保存: {results_path}")
 
 
