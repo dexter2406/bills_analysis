@@ -136,6 +136,7 @@
 - `v1` API schema 已冻结（`src/bills_analysis/models/`）。
 - 非兼容变更禁止：不得删除/重命名/改类型已发布字段。
 - 如需变更，必须先版本升级（如 `v1.1`/`v2`）并在 `SESSION_NOTES.md` 标注 breaking change。
+- 并行开发期间，前端默认对接 `v1` 冻结契约；后端在 M1 内部重构不得改变 `v1` 对外字段与语义。
 
 ## 6) 从本地 Excel 过渡到 Lark 的目标工作流
 当前流程：`PDF -> 识别 JSON -> 待校验 Excel -> 人工修正 -> merge Excel`。

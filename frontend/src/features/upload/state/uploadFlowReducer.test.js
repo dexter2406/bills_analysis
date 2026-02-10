@@ -1,0 +1,53 @@
+import { describe, expect, it } from "vitest";
+import {
+  initialUploadState,
+  normalizeCategoryForBatch,
+  uploadFlowReducer,
+} from "./uploadFlowReducer";
+
+describe("uploadFlowReducer", () => {
+  it("clears queued files when switching batch type", () => {
+    const state = {
+      ...initialUploadState,
+      batchType: "daily",
+      files: [
+        { id: "1", name: "a.pdf", size: 1, category: "bar", file: new File(["a"], "a.pdf", { type: "application/pdf" }) },
+      ],
+      batch: { batch_id: "b1", status: "review_ready" },
+      reviewSubmitted: true,
+      mergeRequested: true,
+    };
+
+    const next = uploadFlowReducer(state, { type: "SET_BATCH_TYPE", value: "office" });
+    expect(next.files).toHaveLength(0);
+    expect(next.batch).toBeNull();
+    expect(next.reviewSubmitted).toBe(false);
+    expect(next.mergeRequested).toBe(false);
+  });
+
+  it("sets phase to ready when files are added", () => {
+    const next = uploadFlowReducer(initialUploadState, {
+      type: "ADD_FILES",
+      entries: [{ id: "1", name: "a.pdf", size: 2, category: "bar", file: new File(["a"], "a.pdf", { type: "application/pdf" }) }],
+      rejectedMessage: "",
+    });
+
+    expect(next.phase).toBe("ready");
+    expect(next.files).toHaveLength(1);
+  });
+
+  it("normalizes daily fallback category", () => {
+    expect(normalizeCategoryForBatch("daily", "office")).toBe("bar");
+  });
+
+  it("stores merge task metadata on merge queue success", () => {
+    const task = { task_id: "t1", task_type: "merge_batch" };
+    const payload = { mode: "overwrite", monthly_excel_path: null, metadata: {} };
+
+    const next = uploadFlowReducer(initialUploadState, { type: "MERGE_QUEUE_SUCCESS", task, payload });
+    expect(next.mergeRequested).toBe(true);
+    expect(next.lastMergeTaskId).toBe("t1");
+    expect(next.mergeRequestPayload.mode).toBe("overwrite");
+    expect(next.phase).toBe("tracking");
+  });
+});
