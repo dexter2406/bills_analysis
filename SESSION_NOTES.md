@@ -112,3 +112,19 @@
 - next: Frontend rerun createBatch JSON flow and verify OPTIONS preflight no longer returns 405
 - risk_or_note: Low risk: CORS middleware only affects cross-origin headers and preflight handling
 - status: done
+
+## [2026-02-10 16:38:24] START agent-b-fix-review-sync-merge-output
+- branch: `feat-backend`
+- head: `34add3f`
+- start_head: `34add3f`
+- worktree: `D:\CodeSpace\prj_rechnung\bills_analysis_backend`
+- status: in_progress
+
+## [2026-02-10 16:38:33] END agent-b-fix-review-sync-merge-output
+- branch: `feat-backend`
+- commit: `34add3f`
+- summary: backend: add configurable CORS middleware for FastAPI to handle preflight OPTIONS requests, unblock cross-origin createBatch flow from frontend dev hosts, and extend API schema tests/docs for CORS headers and behavior
+- uncommitted_files: `SESSION_NOTES.md`, `src/bills_analysis/api/main.py`, `src/bills_analysis/integrations/local_backend.py`, `src/bills_analysis/services/batch_service.py`, `tests/test_api_schema_v1.py`
+- next: Frontend should submit nested result payload per row; if sending flattened fields, backend now normalizes but should migrate client to canonical shape
+- risk_or_note: Low-medium: stricter review validation now returns 422 for rows without usable result fields; verify frontend error handling
+- status: done

@@ -10,7 +10,7 @@ from typing import Any
 from uuid import uuid4
 
 import pytest
-from openpyxl import Workbook
+from openpyxl import Workbook, load_workbook
 from pydantic import ValidationError
 
 from bills_analysis.integrations.local_backend import LocalPipelineBackend
@@ -141,7 +141,7 @@ def test_api_contract_v1_endpoints() -> None:
 
         review_res = client.put(
             f"/v1/batches/{batch_id}/review",
-            json={"rows": [{"filename": "a.pdf", "result": {"brutto": "1.0"}}]},
+            json={"rows": [{"category": "bar", "filename": "a.pdf", "result": {"brutto": "1.0"}}]},
         )
         assert review_res.status_code == 200
         reviewed = review_res.json()
@@ -243,6 +243,84 @@ def test_review_rows_and_preview_routes() -> None:
         preview_res = client.get(body["rows"][0]["preview_url"])
         assert preview_res.status_code == 200
         assert preview_res.headers["content-type"].startswith("application/pdf")
+
+
+def test_submit_review_rejects_missing_result_shape() -> None:
+    """Review submit should return 422 when row has neither result nor mappable fields."""
+
+    TestClient, app = _get_test_client_and_app()
+    with TestClient(app) as client:
+        create_res = client.post(
+            "/v1/batches",
+            json={
+                "type": "daily",
+                "run_date": "04/02/2026",
+                "inputs": [{"path": "a.pdf", "category": "bar"}],
+                "metadata": {},
+            },
+        )
+        assert create_res.status_code == 200
+        batch_id = create_res.json()["batch_id"]
+        review_res = client.put(
+            f"/v1/batches/{batch_id}/review",
+            json={
+                "rows": [
+                    {
+                        "row_id": "row-0001",
+                        "filename": "a.pdf",
+                        "category": "bar",
+                    }
+                ]
+            },
+        )
+        assert review_res.status_code == 422
+
+
+def test_submit_review_flatted_fields_are_normalized_and_persisted() -> None:
+    """Flattened review fields should be normalized into result and persisted artifact."""
+
+    TestClient, app = _get_test_client_and_app()
+    with TestClient(app) as client:
+        create_res = client.post(
+            "/v1/batches",
+            json={
+                "type": "daily",
+                "run_date": "04/02/2026",
+                "inputs": [{"path": "a.pdf", "category": "bar"}],
+                "metadata": {},
+            },
+        )
+        assert create_res.status_code == 200
+        batch_id = create_res.json()["batch_id"]
+
+        review_res = client.put(
+            f"/v1/batches/{batch_id}/review",
+            json={
+                "rows": [
+                    {
+                        "row_id": "row-0001",
+                        "filename": "a.pdf",
+                        "category": "bar",
+                        "brutto": "12.30",
+                        "netto": "10.00",
+                        "store_name": "Demo",
+                    }
+                ]
+            },
+        )
+        assert review_res.status_code == 200
+
+        rows_res = client.get(f"/v1/batches/{batch_id}/review-rows")
+        assert rows_res.status_code == 200
+        row = rows_res.json()["rows"][0]
+        assert row["result"]["brutto"] == "12.30"
+        assert row["result"]["netto"] == "10.00"
+        assert row["result"]["store_name"] == "Demo"
+
+        review_file = Path("outputs") / "webapp" / batch_id / "review_rows.json"
+        assert review_file.exists()
+        saved_rows = json.loads(review_file.read_text(encoding="utf-8"))
+        assert saved_rows[0]["result"]["brutto"] == "12.30"
 
 
 def test_review_rows_not_found_returns_404() -> None:
@@ -546,6 +624,69 @@ def test_local_backend_process_batch_raises_on_extract_failure(monkeypatch: pyte
 
     with pytest.raises(RuntimeError):
         asyncio.run(backend.process_batch(batch))
+
+
+def test_local_backend_merge_builds_non_empty_daily_validated_excel() -> None:
+    """Daily merge should build non-empty validated workbook from saved review results."""
+
+    test_root = Path("outputs") / "pytest_tmp" / str(uuid4())
+    test_root.mkdir(parents=True, exist_ok=True)
+
+    monthly_path = test_root / "monthly.xlsx"
+    wb = Workbook()
+    ws = wb.active
+    ws.append(["Datum", "Umsatz Brutto", "Umsatz Netto"])
+    ws.append(["04/02/2026", 0, 0])
+    wb.save(monthly_path)
+
+    req = CreateBatchRequest(
+        type="daily",
+        run_date="04/02/2026",
+        inputs=[{"path": str(test_root / "dummy.pdf"), "category": "zbon"}],
+        metadata={},
+    )
+    batch = BatchRecord.new(req)
+    batch.review_rows = [
+        {
+            "row_id": "row-0001",
+            "category": "zbon",
+            "filename": "zbon.pdf",
+            "result": {"run_date": "04/02/2026", "brutto": "123.45", "netto": "100.00"},
+            "score": {"brutto": 0.95, "netto": 0.95},
+            "preview_path": str(test_root / "preview.pdf"),
+        },
+        {
+            "row_id": "row-0002",
+            "category": "bar",
+            "filename": "bar.pdf",
+            "result": {
+                "run_date": "04/02/2026",
+                "store_name": "Demo Store",
+                "brutto": "23.45",
+                "netto": "20.00",
+            },
+            "score": {"store_name": 0.9, "brutto": 0.9, "netto": 0.9},
+            "preview_path": str(test_root / "preview.pdf"),
+        },
+    ]
+
+    backend = LocalPipelineBackend(root=test_root / "out")
+    output = asyncio.run(
+        backend.merge_batch(
+            batch,
+            {"mode": "overwrite", "monthly_excel_path": str(monthly_path)},
+        )
+    )
+    validated_excel = Path(output["validated_excel_path"])
+    assert validated_excel.exists()
+
+    merged_wb = load_workbook(validated_excel)
+    merged_ws = merged_wb.active
+    headers = [cell.value for cell in merged_ws[1]]
+    assert merged_ws.max_row >= 2
+    assert "Umsatz Brutto" in headers
+    brutto_col = headers.index("Umsatz Brutto") + 1
+    assert merged_ws.cell(row=2, column=brutto_col).value is not None
 
 
 def _openapi_contract_subset(spec: dict) -> dict:

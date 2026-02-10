@@ -9,7 +9,8 @@ from typing import Any
 
 from openpyxl import Workbook
 
-from bills_analysis.excel_ops import build_rows_with_meta, normalize_date, write_datum_cell
+from bills_analysis.excel_ops import normalize_date, write_datum_cell
+from bills_analysis.integrations.excel_mapper_adapter import map_daily_json_to_excel
 from bills_analysis.models.common import InputFile
 from bills_analysis.models.internal import BatchRecord
 from bills_analysis.services.merge_service import merge_daily, merge_office
@@ -346,15 +347,7 @@ class LocalPipelineBackend:
         }
 
     def _write_daily_validated_excel(self, batch: BatchRecord, out_path: Path) -> None:
-        """Build daily validated workbook from current review rows."""
-
-        config_path = Path("tests") / "config.json"
-        thresholds = {"default": 0.8, "fields": {}, "max_pages": 4}
-        if config_path.exists():
-            try:
-                thresholds = json.loads(config_path.read_text(encoding="utf-8"))
-            except Exception:
-                pass
+        """Build daily validated workbook from review rows using legacy mapper style logic."""
 
         items = []
         for row in batch.review_rows:
@@ -374,42 +367,15 @@ class LocalPipelineBackend:
                 }
             )
 
-        rows, zbon_files_by_date = build_rows_with_meta(items, thresholds)
-        if not rows:
+        if not items:
             raise ValueError("No daily review rows available for merge")
-
-        first = rows[0]
-        headers = list(first.keys())
-        wb = Workbook()
-        ws = wb.active
-        ws.title = "Results"
-        ws.append(headers)
-        ws.append([first.get(h) for h in headers])
-        write_datum_cell(ws.cell(row=2, column=1), first.get("Datum"))
-
-        preview_map = {}
-        for item in items:
-            filename = str(item.get("filename") or "")
-            if filename:
-                preview_map[filename] = item.get("preview_path")
-
-        header_to_col = {name: idx + 1 for idx, name in enumerate(headers)}
-        link_row_idx = 3
-        zbon_files = zbon_files_by_date.get(first.get("Datum") or "", [])
-        for idx, fname in enumerate(zbon_files, start=1):
-            if idx > 5:
-                break
-            col = header_to_col.get(f"Ausgabe {idx} Name")
-            if col is None:
-                continue
-            link = _to_excel_hyperlink(preview_map.get(fname))
-            if not link:
-                continue
-            cell = ws.cell(row=link_row_idx, column=col)
-            cell.value = "check pdf"
-            cell.hyperlink = link
-
-        wb.save(out_path)
+        temp_json_path = out_path.with_suffix(".rows.json")
+        temp_json_path.write_text(json.dumps(items, ensure_ascii=False, indent=2), encoding="utf-8")
+        map_daily_json_to_excel(
+            temp_json_path,
+            excel_path=out_path,
+            config_path=Path("tests") / "config.json",
+        )
 
     def _write_office_validated_excel(self, batch: BatchRecord, out_path: Path) -> None:
         """Build office validated workbook from current review rows."""

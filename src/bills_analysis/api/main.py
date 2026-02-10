@@ -342,6 +342,8 @@ async def submit_review(batch_id: str, req: SubmitReviewRequest) -> BatchRespons
         return BatchResponse.from_record(record)
     except KeyError as exc:
         raise HTTPException(status_code=404, detail="batch not found") from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 @app.post("/v1/batches/{batch_id}/merge-source/local", response_model=MergeSourceLocalResponse)
