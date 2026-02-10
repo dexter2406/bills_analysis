@@ -20,12 +20,17 @@ class BatchService:
     async def create_batch(self, req: CreateBatchRequest) -> BatchRecord:
         """Persist a new batch and enqueue processing task."""
 
-        batch = BatchRecord.new(req)
-        await self.repo.create(batch)
-        await self.queue.enqueue(
-            QueueTask.new(batch_id=batch.batch_id, task_type=TaskType.PROCESS_BATCH)
-        )
+        batch, _ = await self.create_batch_with_task(req)
         return batch
+
+    async def create_batch_with_task(self, req: CreateBatchRequest) -> tuple[BatchRecord, QueueTask]:
+        """Persist a batch and return the corresponding queued process task."""
+
+        batch = BatchRecord.new(req)
+        task = QueueTask.new(batch_id=batch.batch_id, task_type=TaskType.PROCESS_BATCH)
+        await self.repo.create(batch)
+        await self.queue.enqueue(task)
+        return batch, task
 
     async def get_batch(self, batch_id: str) -> BatchRecord | None:
         """Load a batch by id."""

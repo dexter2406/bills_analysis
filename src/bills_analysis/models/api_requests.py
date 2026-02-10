@@ -18,6 +18,14 @@ class CreateBatchRequest(StrictModel):
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
+class CreateBatchUploadForm(StrictModel):
+    """Parsed multipart form fields for creating a batch upload task."""
+
+    type: BatchType
+    run_date: Annotated[str | None, Field(pattern=r"^\d{2}/\d{2}/\d{4}$")] = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
 class SubmitReviewRequest(StrictModel):
     """Human-reviewed rows submitted back to backend."""
 

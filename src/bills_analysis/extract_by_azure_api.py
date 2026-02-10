@@ -1,12 +1,29 @@
 # src/bills_analysis/azure_extraction.py
+from __future__ import annotations
 
 import json
 import os
-from dotenv import load_dotenv
+
+try:
+    from dotenv import load_dotenv
+except ModuleNotFoundError:
+    def load_dotenv(*_args, **_kwargs):
+        """Fallback no-op when python-dotenv is not installed."""
+
+        return False
+
 from openai import AzureOpenAI
-from azure.core.credentials import AzureKeyCredential
-from azure.ai.documentintelligence import DocumentIntelligenceClient
-from azure.ai.documentintelligence.models import AnalyzeDocumentRequest
+
+try:
+    from azure.core.credentials import AzureKeyCredential
+    from azure.ai.documentintelligence import DocumentIntelligenceClient
+    from azure.ai.documentintelligence.models import AnalyzeDocumentRequest
+    _AZURE_DI_IMPORT_ERROR: Exception | None = None
+except ModuleNotFoundError as exc:
+    AzureKeyCredential = None  # type: ignore[assignment]
+    DocumentIntelligenceClient = None  # type: ignore[assignment]
+    AnalyzeDocumentRequest = None  # type: ignore[assignment]
+    _AZURE_DI_IMPORT_ERROR = exc
 
 
 def _field_to_dict(field) -> dict:
@@ -84,10 +101,17 @@ _AOAI_CLIENT: AzureOpenAI | None = None
 
 def _get_di_client() -> DocumentIntelligenceClient:
     global _DI_CLIENT
-    endpoint = os.getenv("AZURE_DI_ENDPOINT")
-    key = os.getenv("AZURE_DI_KEY")
+    if _AZURE_DI_IMPORT_ERROR is not None:
+        raise RuntimeError(
+            "缺少依赖 azure-ai-documentintelligence，请执行 `uv sync` 后重试。"
+        ) from _AZURE_DI_IMPORT_ERROR
+
+    endpoint = os.getenv("AZURE_DI_ENDPOINT") or os.getenv("AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT")
+    key = os.getenv("AZURE_DI_KEY") or os.getenv("AZURE_DOCUMENT_INTELLIGENCE_KEY")
     if not endpoint or not key:
-        raise ValueError("请在环境变量中设置 AZURE_DI_ENDPOINT 和 AZURE_DI_KEY")
+        raise ValueError(
+            "请设置 AZURE_DI_ENDPOINT/AZURE_DI_KEY（兼容 AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT/KEY）"
+        )
     if _DI_CLIENT is None:
         _DI_CLIENT = DocumentIntelligenceClient(
             endpoint=endpoint,

@@ -101,6 +101,45 @@
         "summary": "Create Batch"
       }
     },
+    "/v1/batches/upload": {
+      "post": {
+        "description": "Create a batch from multipart upload and enqueue processing task.",
+        "operationId": "create_batch_upload_v1_batches_upload_post",
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_create_batch_upload_v1_batches_upload_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreateBatchUploadTaskResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Batch Upload"
+      }
+    },
     "/v1/batches/{batch_id}": {
       "get": {
         "description": "Fetch one batch by id.",
@@ -378,6 +417,69 @@
       "title": "BatchType",
       "type": "string"
     },
+    "Body_create_batch_upload_v1_batches_upload_post": {
+      "properties": {
+        "bar_files": {
+          "items": {
+            "format": "binary",
+            "type": "string"
+          },
+          "title": "Bar Files",
+          "type": "array"
+        },
+        "metadata_json": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Metadata Json"
+        },
+        "office_files": {
+          "items": {
+            "format": "binary",
+            "type": "string"
+          },
+          "title": "Office Files",
+          "type": "array"
+        },
+        "run_date": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Run Date"
+        },
+        "type": {
+          "title": "Type",
+          "type": "string"
+        },
+        "zbon_file": {
+          "anyOf": [
+            {
+              "format": "binary",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Zbon File"
+        }
+      },
+      "required": [
+        "type"
+      ],
+      "title": "Body_create_batch_upload_v1_batches_upload_post",
+      "type": "object"
+    },
     "CreateBatchRequest": {
       "additionalProperties": false,
       "description": "Request payload for creating a new processing batch.",
@@ -416,6 +518,46 @@
         "inputs"
       ],
       "title": "CreateBatchRequest",
+      "type": "object"
+    },
+    "CreateBatchUploadTaskResponse": {
+      "additionalProperties": false,
+      "description": "Response returned after multipart upload batch is accepted.",
+      "properties": {
+        "batch_id": {
+          "title": "Batch Id",
+          "type": "string"
+        },
+        "created_at": {
+          "format": "date-time",
+          "title": "Created At",
+          "type": "string"
+        },
+        "schema_version": {
+          "const": "v1",
+          "default": "v1",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "status": {
+          "$ref": "#/components/schemas/BatchStatus"
+        },
+        "task_id": {
+          "title": "Task Id",
+          "type": "string"
+        },
+        "type": {
+          "$ref": "#/components/schemas/BatchType"
+        }
+      },
+      "required": [
+        "task_id",
+        "batch_id",
+        "type",
+        "status",
+        "created_at"
+      ],
+      "title": "CreateBatchUploadTaskResponse",
       "type": "object"
     },
     "ErrorInfo": {

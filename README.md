@@ -12,18 +12,18 @@ Local backend CLI skeleton for the invoice Azure API extraction PoC.
 ## Dependencies
 - PyMuPDF for PDF rendering; Pillow for preprocessing.
 - Azure Document Intelligence for extraction (`azure-ai-documentintelligence`).
-- Configure `AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT` and `AZURE_DOCUMENT_INTELLIGENCE_KEY` in `.env`.
+- Configure `AZURE_DI_ENDPOINT` and `AZURE_DI_KEY` in `.env` (also compatible with `AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT` and `AZURE_DOCUMENT_INTELLIGENCE_KEY`).
 
 ## Layout
 - `src/bills_analysis/`: core package and `contracts.py` for `extraction.json`.
 - `src/bills_analysis/api/`: FastAPI routes.
 - `src/bills_analysis/services/`: process/review/merge orchestration.
-- `src/bills_analysis/integrations/`: adapter layer (queue/repo/backend stubs).
+- `src/bills_analysis/integrations/`: adapter layer (azure/excel/filesystem/queue/repo).
 - `src/bills_analysis/models/`: API/queue schemas.
 - `src/bills_analysis/workers/`: queue task worker runtime.
 - `frontend/`: frontend app placeholder (for Azure Static Web Apps).
 - `cli/main.py`: local entrypoint that forwards to the Typer app.
-- `tests/`: minimal CLI regression placeholder.
+- `tests/`: compatibility CLI wrappers + contract/parity tests.
 - `data/samples/`: drop electronic and scanned PDF fixtures here.
 - `outputs/`: runtime artifacts; see `outputs/extraction.example.json` for the contract.
 
@@ -64,14 +64,20 @@ Local backend CLI skeleton for the invoice Azure API extraction PoC.
   ```
 - Poll batch status:  
   `GET /v1/batches/{batch_id}`
+- Upload batch files (multipart):  
+  `POST /v1/batches/upload`
+  - Common fields: `type`, `run_date`, `metadata_json`
+  - `daily`: required single `zbon_file`, optional multiple `bar_files`
+  - `office`: required multiple `office_files`
 - Submit reviewed rows:  
   `PUT /v1/batches/{batch_id}/review`
 - Queue merge:  
   `POST /v1/batches/{batch_id}/merge`
 
 Notes:
-- Current backend adapter is intentionally minimal and writes placeholder artifacts under `outputs/webapp/{batch_id}/`.
+- Current backend adapter runs preprocess + Azure extraction flow and writes artifacts under `outputs/webapp/{batch_id}/`.
 - Queue/repository are in-memory implementations; replace them with Azure Queue + persistent store later without changing API/use-case signatures.
+- Legacy commands under `tests/*.py` are kept as thin wrappers; core business logic is migrated to `src/bills_analysis/services/` and `src/bills_analysis/integrations/`.
 
 ## Next steps (per PoC)
 - Fill the pipeline (render → preprocess → Azure API → extract → evidence) inside `src/bills_analysis/`.

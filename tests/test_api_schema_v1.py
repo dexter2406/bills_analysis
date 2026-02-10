@@ -1,13 +1,19 @@
 from __future__ import annotations
 """Contract tests for frozen API schema v1."""
 
+import asyncio
 import json
+import os
 from pathlib import Path
+from typing import Any
+from uuid import uuid4
 
 import pytest
 from pydantic import ValidationError
 
-from bills_analysis.models.api_requests import CreateBatchRequest, MergeRequest
+from bills_analysis.integrations.local_backend import LocalPipelineBackend
+from bills_analysis.models.api_requests import CreateBatchRequest, CreateBatchUploadForm, MergeRequest
+from bills_analysis.models.internal import BatchRecord
 
 def _get_test_client_and_app():
     """Lazily import FastAPI app to allow model-only tests without web deps."""
@@ -15,6 +21,7 @@ def _get_test_client_and_app():
     pytest.importorskip("fastapi")
     from fastapi.testclient import TestClient
 
+    os.environ["RUN_INLINE_WORKER"] = "false"
     from bills_analysis.api.main import app
 
     return TestClient, app
@@ -96,6 +103,13 @@ def test_merge_request_invalid_mode_rejected() -> None:
         MergeRequest(mode="upsert")
 
 
+def test_create_batch_upload_form_invalid_run_date_rejected() -> None:
+    """CreateBatchUploadForm must reject non-DD/MM/YYYY run_date."""
+
+    with pytest.raises(ValidationError):
+        CreateBatchUploadForm(type="daily", run_date="2026-02-04", metadata={})
+
+
 def test_api_contract_v1_endpoints() -> None:
     """End-to-end API contract checks for v1 routes and response shapes."""
 
@@ -145,6 +159,206 @@ def test_api_contract_v1_endpoints() -> None:
         assert list_body["schema_version"] == "v1"
         assert isinstance(list_body["items"], list)
         assert list_body["total"] >= 1
+
+
+def test_multipart_upload_daily_with_required_single_zbon() -> None:
+    """Daily upload succeeds with exactly one zbon_file and no bar_files."""
+
+    TestClient, app = _get_test_client_and_app()
+    with TestClient(app) as client:
+        upload_res = client.post(
+            "/v1/batches/upload",
+            data={"type": "daily", "run_date": "04/02/2026"},
+            files={
+                "zbon_file": ("zbon.pdf", b"%PDF-1.4\nzbon\n%%EOF", "application/pdf"),
+            },
+        )
+        assert upload_res.status_code == 200
+        body = upload_res.json()
+        assert body["schema_version"] == "v1"
+        assert body["type"] == "daily"
+        assert body["status"] == "queued"
+        assert body["task_id"]
+        assert body["batch_id"]
+
+
+def test_multipart_upload_daily_with_optional_bar_files() -> None:
+    """Daily upload accepts optional bar_files together with required zbon_file."""
+
+    TestClient, app = _get_test_client_and_app()
+    with TestClient(app) as client:
+        upload_res = client.post(
+            "/v1/batches/upload",
+            data={"type": "daily", "run_date": "04/02/2026"},
+            files=[
+                ("zbon_file", ("zbon.pdf", b"%PDF-1.4\nzbon\n%%EOF", "application/pdf")),
+                ("bar_files", ("bar1.pdf", b"%PDF-1.4\nbar1\n%%EOF", "application/pdf")),
+                ("bar_files", ("bar2.pdf", b"%PDF-1.4\nbar2\n%%EOF", "application/pdf")),
+            ],
+        )
+        assert upload_res.status_code == 200
+        body = upload_res.json()
+        assert body["type"] == "daily"
+
+
+def test_multipart_upload_daily_missing_zbon_rejected() -> None:
+    """Daily upload must reject requests without zbon_file."""
+
+    TestClient, app = _get_test_client_and_app()
+    with TestClient(app) as client:
+        upload_res = client.post(
+            "/v1/batches/upload",
+            data={"type": "daily"},
+            files=[("bar_files", ("bar1.pdf", b"%PDF-1.4\nbar1\n%%EOF", "application/pdf"))],
+        )
+        assert upload_res.status_code == 400
+        assert "zbon_file" in upload_res.json()["detail"]
+
+
+def test_multipart_upload_daily_duplicate_zbon_rejected() -> None:
+    """Daily upload must reject duplicate zbon_file parts."""
+
+    TestClient, app = _get_test_client_and_app()
+    with TestClient(app) as client:
+        upload_res = client.post(
+            "/v1/batches/upload",
+            data={"type": "daily"},
+            files=[
+                ("zbon_file", ("zbon_1.pdf", b"%PDF-1.4\nz1\n%%EOF", "application/pdf")),
+                ("zbon_file", ("zbon_2.pdf", b"%PDF-1.4\nz2\n%%EOF", "application/pdf")),
+            ],
+        )
+        assert upload_res.status_code == 400
+        assert "exactly one zbon_file" in upload_res.json()["detail"]
+
+
+def test_multipart_upload_office_multi_files_success() -> None:
+    """Office upload accepts multiple office_files parts."""
+
+    TestClient, app = _get_test_client_and_app()
+    with TestClient(app) as client:
+        upload_res = client.post(
+            "/v1/batches/upload",
+            data={"type": "office", "run_date": "04/02/2026"},
+            files=[
+                ("office_files", ("office_1.pdf", b"%PDF-1.4\no1\n%%EOF", "application/pdf")),
+                ("office_files", ("office_2.pdf", b"%PDF-1.4\no2\n%%EOF", "application/pdf")),
+            ],
+        )
+        assert upload_res.status_code == 200
+        body = upload_res.json()
+        assert body["type"] == "office"
+        assert body["status"] == "queued"
+
+
+def test_multipart_upload_office_missing_files_rejected() -> None:
+    """Office upload must reject requests without office_files."""
+
+    TestClient, app = _get_test_client_and_app()
+    with TestClient(app) as client:
+        upload_res = client.post(
+            "/v1/batches/upload",
+            data={"type": "office"},
+        )
+        assert upload_res.status_code == 400
+        assert "office_files" in upload_res.json()["detail"]
+
+
+def test_multipart_upload_non_pdf_rejected() -> None:
+    """Upload endpoint must reject non-PDF files."""
+
+    TestClient, app = _get_test_client_and_app()
+    with TestClient(app) as client:
+        upload_res = client.post(
+            "/v1/batches/upload",
+            data={"type": "daily"},
+            files={"zbon_file": ("zbon.txt", b"hello", "text/plain")},
+        )
+        assert upload_res.status_code == 400
+        assert "PDF" in upload_res.json()["detail"]
+
+
+def test_multipart_upload_invalid_metadata_json_rejected() -> None:
+    """Upload endpoint must reject invalid metadata_json string."""
+
+    TestClient, app = _get_test_client_and_app()
+    with TestClient(app) as client:
+        upload_res = client.post(
+            "/v1/batches/upload",
+            data={"type": "daily", "metadata_json": "{not-json}"},
+            files={"zbon_file": ("zbon.pdf", b"%PDF-1.4\nzbon\n%%EOF", "application/pdf")},
+        )
+        assert upload_res.status_code == 400
+        assert "metadata_json" in upload_res.json()["detail"]
+
+
+def test_multipart_upload_invalid_run_date_rejected() -> None:
+    """Upload endpoint must reject invalid run_date format."""
+
+    TestClient, app = _get_test_client_and_app()
+    with TestClient(app) as client:
+        upload_res = client.post(
+            "/v1/batches/upload",
+            data={"type": "daily", "run_date": "2026-02-04"},
+            files={"zbon_file": ("zbon.pdf", b"%PDF-1.4\nzbon\n%%EOF", "application/pdf")},
+        )
+        assert upload_res.status_code == 422
+
+
+def test_local_backend_calls_preprocess_and_extract(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Local backend process must invoke preprocess and extraction adapters."""
+
+    called: dict[str, Any] = {"compress": 0, "analyze": 0}
+
+    def fake_compress(pdf_path: Path, *, dest_dir: Path, dpi: int, name_suffix: str) -> Path:
+        """Stub compression helper returning an archive path."""
+
+        called["compress"] += 1
+        dest_dir.mkdir(parents=True, exist_ok=True)
+        archived = dest_dir / f"{pdf_path.stem}_{name_suffix}.pdf"
+        archived.write_bytes(b"%PDF-1.4\narchived\n%%EOF")
+        return archived
+
+    def fake_analyze(pdf_path: Path, *, model_id: str, return_fields: bool) -> Any:
+        """Stub extraction helper returning deterministic payload."""
+
+        called["analyze"] += 1
+        payload = {
+            "store_name": "Demo Shop",
+            "brutto": 12.34,
+            "netto": 10.0,
+            "total_tax": 2.34,
+            "confidence_store_name": 0.9,
+            "confidence_brutto": 0.95,
+            "confidence_netto": 0.9,
+            "confidence_total_tax": 0.8,
+        }
+        if return_fields:
+            return payload, {}
+        return payload
+
+    monkeypatch.setattr("bills_analysis.integrations.local_backend._compress_pdf_for_archive", fake_compress)
+    monkeypatch.setattr("bills_analysis.integrations.local_backend._analyze_pdf_with_azure", fake_analyze)
+
+    test_root = Path("outputs") / "pytest_tmp" / str(uuid4())
+    test_root.mkdir(parents=True, exist_ok=True)
+    src_pdf = test_root / "input.pdf"
+    src_pdf.write_bytes(b"%PDF-1.4\nsource\n%%EOF")
+    req = CreateBatchRequest(
+        type="daily",
+        run_date="04/02/2026",
+        inputs=[{"path": str(src_pdf), "category": "zbon"}],
+        metadata={},
+    )
+    batch = BatchRecord.new(req)
+    backend = LocalPipelineBackend(root=test_root / "out")
+
+    artifacts = asyncio.run(backend.process_batch(batch))
+
+    assert called["compress"] == 1
+    assert called["analyze"] == 1
+    assert Path(artifacts["result_json_path"]).exists()
+    assert Path(artifacts["review_json_path"]).exists()
 
 
 def _openapi_contract_subset(spec: dict) -> dict:

@@ -8,8 +8,18 @@ Use new modules instead:
 - bills_analysis.models.enums
 """
 
-from bills_analysis.models.api_requests import CreateBatchRequest, MergeRequest, SubmitReviewRequest
-from bills_analysis.models.api_responses import BatchListResponse, BatchResponse, MergeTaskResponse
+from bills_analysis.models.api_requests import (
+    CreateBatchRequest,
+    CreateBatchUploadForm,
+    MergeRequest,
+    SubmitReviewRequest,
+)
+from bills_analysis.models.api_responses import (
+    BatchListResponse,
+    BatchResponse,
+    CreateBatchUploadTaskResponse,
+    MergeTaskResponse,
+)
 from bills_analysis.models.common import ErrorInfo, InputFile
 from bills_analysis.models.enums import BatchStatus, BatchType, TaskType
 from bills_analysis.models.internal import BatchRecord, QueueTask
@@ -22,6 +32,8 @@ __all__ = [
     "BatchStatus",
     "BatchType",
     "CreateBatchRequest",
+    "CreateBatchUploadForm",
+    "CreateBatchUploadTaskResponse",
     "ErrorInfo",
     "InputFile",
     "MergeRequest",
