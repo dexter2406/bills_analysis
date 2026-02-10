@@ -2,6 +2,7 @@
 
 半自动会话记录：`start` 自动记录会话开始，`end` 自动记录最近一次提交并附人工 next。
 
+<<<<<<< HEAD
 ## [2026-02-08 22:44:51] START agent-b-m1-multipart
 - branch: `feat-backend`
 - head: `30ed1b6`
@@ -65,8 +66,12 @@
 - next: Run uv sync to install new DI dependencies and rerun category pipeline with valid Azure env vars
 - risk_or_note: Medium: extraction still returns null until env has Azure DI package and credentials
 - status: done
+<<<<<<< HEAD
 
 
+=======
+=======
+>>>>>>> integrate/backend-frontend-m1
 ## [2026-02-08 23:56:34] START frontend-m1
 - branch: `feat-frontend`
 - head: `30ed1b6`
@@ -80,4 +85,9 @@
 - note: Upload and Manual Review UI are connected; one-click Submit in Confirm Results now chains review + queue merge.
 - note: Monthly Excel source switch now supports `from Local` and `from Lark` (scaffold); local maps to `local://<filename>`.
 - next: split first-version frontend commits into tooling/contracts/upload/review/docs and push for backend联调.
+<<<<<<< HEAD
 - risk: Local Excel currently passes only string path token, backend has no binary upload parsing yet.
+=======
+- risk: Local Excel currently passes only string path token, backend has no binary upload parsing yet.
+>>>>>>> feat-frontend
+>>>>>>> integrate/backend-frontend-m1

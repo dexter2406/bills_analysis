@@ -1,0 +1,63 @@
+/**
+ * Editable review table for one category.
+ * @param {{
+ *  title: string;
+ *  description: string;
+ *  rows: Array<Record<string, string>>;
+ *  columns: Array<{ key: string; label: string; readOnly?: boolean }>;
+ *  onChangeCell: (rowId: string, key: string, value: string) => void;
+ * }} props
+ */
+export function ReviewCategoryTable({ title, description, rows, columns, onChangeCell }) {
+  if (!rows.length) {
+    return null;
+  }
+
+  return (
+    <section className="ledger-card p-4">
+      <header className="mb-3">
+        <h3 className="text-lg font-semibold">{title}</h3>
+        <p className="mt-1 text-xs text-ledger-smoke">{description}</p>
+      </header>
+
+      <div className="overflow-x-auto rounded-md border border-ledger-line bg-white">
+        <table className="queue-table review-edit-table">
+          <thead>
+            <tr>
+              {columns.map((column) => (
+                <th key={column.key}>{column.label}</th>
+              ))}
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row) => (
+              <tr key={row.id}>
+                {columns.map((column) => (
+                  <td key={`${row.id}-${column.key}`}>
+                    {column.readOnly ? (
+                      <span className="text-ledger-ink">{row[column.key]}</span>
+                    ) : (
+                      <input
+                        type="text"
+                        value={row[column.key] ?? ""}
+                        onChange={(event) => onChangeCell(row.id, column.key, event.target.value)}
+                        className="review-cell-input"
+                        aria-label={`${title}-${column.key}-${row.id}`}
+                      />
+                    )}
+                  </td>
+                ))}
+                <td>
+                  <a href="#" className="review-view-link" onClick={(event) => event.preventDefault()}>
+                    View
+                  </a>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  );
+}
