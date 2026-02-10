@@ -3,11 +3,12 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-from merge_daily_excel import merge_daily
-from merge_office_excel import merge_office
+from bills_analysis.services.merge_service import merge_daily, merge_office
 
 
 def main() -> None:
+    """CLI entrypoint for daily/office Excel merge through src merge service."""
+
     parser = argparse.ArgumentParser(
         description="Entry point for merging validated Excel into monthly Excel."
     )
@@ -33,14 +34,15 @@ def main() -> None:
     args = parser.parse_args()
 
     if args.mode == "daily":
-        merge_daily(args.validated_xlsx, args.monthly_xlsx, out_dir=args.out_dir)
+        out_path = merge_daily(args.validated_xlsx, args.monthly_xlsx, out_dir=args.out_dir)
     else:
-        merge_office(
+        out_path = merge_office(
             args.validated_xlsx,
             args.monthly_xlsx,
             out_dir=args.out_dir,
             append=args.append,
         )
+    print(f"[Excel] Merged and saved: {out_path}")
 
 
 if __name__ == "__main__":

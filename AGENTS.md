@@ -7,7 +7,7 @@
 - 上传 PDF 会做压缩归档，并生成可预览链接，便于人工核查。
 
 当前技术方向：
-- 前端：Azure Static Web Apps（计划）
+- 前端：Azure Static Web Apps（计划），使用JavaScript语言编写
 - 后端：FastAPI + Python（Azure Functions / Queue 模式计划）
 - 文档识别：Azure Document Intelligence（office 还使用 Azure OpenAI 做语义补充）
 
@@ -59,20 +59,21 @@
 
 ## 4) 双 Session 协作规则（核心）
 ### 4.1 角色边界
-- Session A（Backend）仅改：
+- Agent A（Frontend session）仅改：
+  - `frontend/**`
+  - 前端相关文档与 API 调用示例
+- Agent B（Backend session）仅改：
   - `src/bills_analysis/**`
   - 后端相关 `tests/*.py`（迁移期）
   - `README.md` 后端段落
-- Session B（Frontend）仅改：
-  - `frontend/**`
-  - 前端相关文档与 API 调用示例
 
 ### 4.2 禁止互改
-- 前端 session 不改 `src/bills_analysis/**` 业务逻辑。
-- 后端 session 不改 `frontend/**` UI/样式/构建配置。
+- 前端 Agent A 不改 `src/bills_analysis/**` 和 `tests/*.py` 的新老业务逻辑。
+- 后端 Agent B 不改 `frontend/**` UI/样式/构建配置。
+- 对API（`src/bills_analysis/models/`）的修改见 `4.5 API 契约优先` 规则
 
 ### 4.3 分支与提交约定
-- Backend 分支：`main`或者`feat-backend*`
+- Backend 分支：`feat-backend*`
 - Frontend 分支：`feat-frontend*`
 - Commit 前缀：
   - Backend: `backend: ...`
@@ -103,16 +104,25 @@
 - 示例放 `.env.example`。
 - 阈值与业务参数统一走 `tests/config.json`（后续迁移到 `config/`）。
 
+### 4.7 前后端并行开发同步规则
+- 默认工作模式为并行：Backend 与 Frontend 可同时推进，不要求“后端全部完成后再启动前端”。
+- Frontend 开发以 `src/bills_analysis/models/` 的 `v1` schema 为唯一契约来源，不直接依赖临时脚本返回结构。
+- Backend 在 M1 期间允许重构内部实现，但不得破坏 `v1` API 兼容性；若必须变更，先升级版本再通知前端切换。
+- 每个 session 结束时在 `SESSION_NOTES.md` 明确记录当前契约版本、联调状态、阻塞项（若有）。
+
 
 
 ## 5) 近期里程碑
-- M1：把 tests 中已验证业务逻辑下沉到 `services/integrations`，保持行为不变。
-- M2：开放 API（create batch / query status / submit review / merge）。
-- M3：前端完成上传-校验-确认-下载闭环。
+- M1（当前并行主线）：
+  - Backend：把 tests 中已验证业务逻辑下沉到 `services/integrations`，保持行为不变。
+  - Frontend：基于已冻结 `v1` API schema 同步构建上传/状态查询/校验提交流程页面与调用链路。
+- M2（并行收口）：开放并稳定 API（create batch / query status / submit review / merge），并确保前端调用链路在同版本契约下可联调。
+- M3：前端完成上传-校验-确认-下载闭环，并与后端 merge 结果页对齐。
 
 ## 5.1 启动与验证最小命令
 - 旧流程（真实业务链）：  
-  `uv run python tests/run_with_category.py --bar <bar.pdf> --zbon <zbon.pdf> --run_date 04/02/2026`
+  - daily场景：`uv run python tests/run_with_category.py --bar-dir <bar_dir> --zbon <zbon.pdf> --run_date 04/02/2026`
+  - office场景：`uv run python tests/run_with_category.py --office-dir <office_dir> --run_date 04/02/2026`
 - 新 API 启动：  
   `uv run invoice-web-api`
 - API 健康检查：  
@@ -148,3 +158,13 @@ Lark 接入策略：
 - 有日志和错误提示
 - 不破坏既有脚本主流程
 - 文档同步更新（README + SESSION_NOTES.md）
+
+## 8) Skills 使用约定
+### 8.1 前端 Skills 的规则
+- 前端设计与页面构建任务，默认启用 `frontend-design`。
+- React/Next.js 相关开发、重构、性能优化任务，默认启用 `vercel-react-best-practices`。
+- 触发方式：
+  - 在需求中显式写 `$frontend-design` 或 `$vercel-react-best-practices`。
+  - 或任务描述明确属于对应 skill 的适用范围（如组件构建、页面设计、React 性能优化等）。
+- Skill 文件路径约定：`/.codex/skills/**/SKILL.md`。
+- 若 skill 缺失、未安装或路径不可读，需在回复中明确说明，并使用常规方案继续执行。

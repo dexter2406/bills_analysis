@@ -21,6 +21,7 @@ Thumbs.db
 # Local data (keep samples out of VCS unless intentional)
 uv.lock
 .env
+data/**
 
 # ignore
 outputs/*

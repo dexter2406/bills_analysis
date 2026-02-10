@@ -76,3 +76,31 @@ class MergeTaskResponse(StrictModel):
             task_type=task.task_type,
             created_at=task.created_at,
         )
+
+
+class CreateBatchUploadTaskResponse(StrictModel):
+    """Response returned after multipart upload batch is accepted."""
+
+    schema_version: Literal["v1"] = SCHEMA_VERSION
+    task_id: str
+    batch_id: str
+    type: BatchType
+    status: BatchStatus
+    created_at: datetime
+
+    @classmethod
+    def from_batch_and_task(
+        cls,
+        *,
+        batch: BatchRecord,
+        task: QueueTask,
+    ) -> "CreateBatchUploadTaskResponse":
+        """Map created batch/task objects to upload response payload."""
+
+        return cls(
+            task_id=task.task_id,
+            batch_id=batch.batch_id,
+            type=batch.batch_type,
+            status=batch.status,
+            created_at=task.created_at,
+        )
