@@ -19,11 +19,11 @@
   "id": "C-002",
   "ts": "2026-02-13T22:51:45+01:00",
   "status": "OPEN",
-  "scope": "backend m1.1 review-merge stabilization",
+  "scope": "backend m1.1 review-merge 稳定化",
   "who": {"agent":"agent-b","side":"backend","branch":"feat-backend-v1","head":"0cd9ef8"},
-  "what": ["Added strict review row normalization on PUT /v1/batches/{id}/review with 422 on invalid shape and compatibility mapping from flattened fields to nested result.","Persist submitted review artifacts to review_rows.json and review_rows_submitted.json so merge and troubleshooting use latest edited rows instead of extraction snapshot.","Restored daily validated merge workbook generation via legacy mapper path to recover confidence highlights and PDF links in validated_for_merge output.","why: Daily integration showed merged output ignored edited form values and produced empty validated workbook; this change aligns review submission with merge input contract."],
-  "next": {"goal":"Run one full daily and one office end-to-end API smoke against real frontend flow, then remove temporary flat-payload compatibility if no regressions.","owner":"agent-b"},
-  "dep": ["frontend: submit canonical nested row payload {row_id,category,filename,result,score,preview_path} and handle 422 validation feedback explicitly."],
-  "risk": ["Legacy flat-field payloads remain temporarily supported for compatibility; remove fallback after frontend rollout to avoid schema drift."]
+  "what": ["已在 PUT /v1/batches/{id}/review 增加严格 review row normalization；当 payload shape 不合法时返回 422，并保留从 flattened fields 到 nested result 的 compatibility mapping。","已将提交后的 review 结果持久化到 review_rows.json 与 review_rows_submitted.json，确保 merge 与排障读取的是最新人工编辑数据，而不是 extraction snapshot。","已通过 legacy mapper path 恢复 daily validated merge workbook 生成，重新带回 confidence highlights 与 PDF links 到 validated_for_merge 输出。","why: 日常联调中 merged output 未反映表单编辑且 validated workbook 为空；本次修复将 review submission 与 merge input contract 对齐。"],
+  "next": {"goal":"基于真实前端流程完成一次 daily 与一次 office 的 end-to-end API smoke；若无回归，移除临时 flat-payload compatibility。","owner":"agent-b"},
+  "dep": ["frontend: 请持续提交 canonical nested row payload {row_id,category,filename,result,score,preview_path}，并显式处理 422 validation feedback。"],
+  "risk": ["当前仍临时支持 legacy flat-field payload 以兼容历史前端；前端全量切换后需移除 fallback，避免 schema drift。"]
 }
 ```
