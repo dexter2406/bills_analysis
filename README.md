@@ -1,5 +1,7 @@
 # bills_analysis
 
+> **For AI agents**: [CLAUDE.md](./CLAUDE.md) (global) | [Backend](src/bills_analysis/CLAUDE.md) | [Frontend](frontend/CLAUDE.md)
+
 Local backend CLI skeleton for the invoice Azure API extraction PoC.
 
 ## Run style

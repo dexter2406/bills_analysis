@@ -28,5 +28,7 @@ outputs/*
 data/samples/*
 
 # SKILLS
-.codex/skills/react-best-practices/rules
-
+# AI assistant configurations (symbolic links, not real content)
+.codex
+.claude
+.agents
