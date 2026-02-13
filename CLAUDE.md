@@ -102,13 +102,14 @@ Current Contract Baseline & Phase：
 
 字段规范：
 
+- 语言：必须用中文做解释，但技术点可以用英语
 - 必填字段：`id`, `ts`, `status`, `scope`, `who`, `what`, `next`
 - 可选字段：`dep`, `risk`
 - 单状态规则：`status` 固定为 `OPEN`，避免状态枚举膨胀
 - `who` 必须包含：`agent`, `side`, `branch`, `head`
-- `what` 用数组记录变更事实与动机（`what + why），用中文做解释，技术上可以用英语
-- `dep` 只在依赖对方时填写；出现 `dep` 代表需要跨 Agent 跟进，用中文做解释，技术上可以用英语
-- `next` 必须包含：`goal`, `owner`，用中文做解释，技术上可以用英语
+- `what` 用数组记录变更事实与动机（`what + why），
+- `dep` 只在依赖对方时填写；出现 `dep` 代表需要跨 Agent 跟进
+- `next` 必须包含：`goal`, `owner`
 
 写入命令（唯一入口）：
 

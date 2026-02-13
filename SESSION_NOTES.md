@@ -13,3 +13,17 @@
   "risk": ["最后一次测试超时参数调整后尚未做 full-suite 回归；发布前需重新执行 pnpm vitest run。"]
 }
 ```
+
+```json
+{
+  "id": "C-002",
+  "ts": "2026-02-13T22:51:45+01:00",
+  "status": "OPEN",
+  "scope": "backend m1.1 review-merge stabilization",
+  "who": {"agent":"agent-b","side":"backend","branch":"feat-backend-v1","head":"0cd9ef8"},
+  "what": ["Added strict review row normalization on PUT /v1/batches/{id}/review with 422 on invalid shape and compatibility mapping from flattened fields to nested result.","Persist submitted review artifacts to review_rows.json and review_rows_submitted.json so merge and troubleshooting use latest edited rows instead of extraction snapshot.","Restored daily validated merge workbook generation via legacy mapper path to recover confidence highlights and PDF links in validated_for_merge output.","why: Daily integration showed merged output ignored edited form values and produced empty validated workbook; this change aligns review submission with merge input contract."],
+  "next": {"goal":"Run one full daily and one office end-to-end API smoke against real frontend flow, then remove temporary flat-payload compatibility if no regressions.","owner":"agent-b"},
+  "dep": ["frontend: submit canonical nested row payload {row_id,category,filename,result,score,preview_path} and handle 422 validation feedback explicitly."],
+  "risk": ["Legacy flat-field payloads remain temporarily supported for compatibility; remove fallback after frontend rollout to avoid schema drift."]
+}
+```
