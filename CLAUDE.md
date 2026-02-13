@@ -96,21 +96,42 @@ Current Contract Baseline & Phase：
 - Frontend 默认仅对接 `v1` 冻结契约，不依赖临时脚本返回结构。
 - Backend 在 M1 可重构内部实现，但不得改变 `v1` 对外字段与语义。
 
-## 6. Session Handoff (SESSION_NOTES.md)
+## 6. Session Handoff (SESSION_NOTES.md, Fenced JSON)
 
-- 每次开始做新的任务，或者开启新的session，请调用：
-  - `python scripts/session_notes.py start --session <session-name>`
+`SESSION_NOTES.md` 采用 fenced JSON 记录多 Agent 交接（每条记录一个 ` ```json ... ``` ` 代码块）。
 
-- 每次完成一个任务（新功能、bug修复等），或者手动提示这个 session 结束，请调用：
-  - `python scripts/session_notes.py end --session <session-name> --next "<next>" --risk "<risk>"`
+字段规范：
 
-记录要求：
+- 必填字段：`id`, `ts`, `status`, `scope`, `who`, `what`, `next`
+- 可选字段：`dep`, `risk`
+- 单状态规则：`status` 固定为 `OPEN`，避免状态枚举膨胀
+- `who` 必须包含：`agent`, `side`, `branch`, `head`
+- `what` 用数组记录变更事实与动机（`what + why），用中文做解释，技术上可以用英语
+- `dep` 只在依赖对方时填写；出现 `dep` 代表需要跨 Agent 跟进，用中文做解释，技术上可以用英语
+- `next` 必须包含：`goal`, `owner`，用中文做解释，技术上可以用英语
 
-- `start` 记录分支、HEAD、worktree、时间。
-- `end` 记录最近 commit 与改动文件。
-- `next` 基于当前解决的问题，或者Milestones来确定下一步
-- `risk` optional, 如果有风险生成再加
-- 每个 session 结束时记录契约版本、联调状态、阻塞项。
+写入命令（唯一入口）：
+
+- `python scripts/session_notes.py log --scope "<scope>" --agent <agent> --side <frontend|backend> --what "<what>" --why "<why>" --next-goal "<next-goal>" --next-owner "<owner>"`
+- 可重复参数：`--what`、`--dep`、`--risk`
+- `id` 默认自动递增（如 `C-001`），可选 `--id` 手工指定
+- 当前脚本只解析 fenced JSON 记录；若存在旧单行 JSONL 记录，需先迁移后再继续使用自动递增。
+
+参考记录：
+
+```json
+{
+  "id": "C-001",
+  "ts": "2026-02-13T16:20:00+01:00",
+  "status": "OPEN",
+  "scope": "upload-review chain",
+  "who": {"agent":"agent-a","side":"frontend","branch":"feat-frontend","head":"28997aa"},
+  "what": ["打通了 Upload->Review->Submit 的工作流","why:按M1的开发计划"],
+  "dep": ["backend: POST /v1/batches/{id}/review-rows accepts {row_id,result:{...}}"],
+  "risk": ["仅为 mock API; 实际 real API 还未验证"],
+  "next": {"goal":"替换为实际API，并执行smoe test","owner":"agent-a"}
+}
+```
 
 ## 7. Commands You Should Prefer
 
