@@ -27,3 +27,17 @@
   "risk": ["当前仍临时支持 legacy flat-field payload 以兼容历史前端；前端全量切换后需移除 fallback，避免 schema drift。"]
 }
 ```
+
+```json
+{
+  "id": "C-003",
+  "ts": "2026-02-14T00:03:27+01:00",
+  "status": "OPEN",
+  "scope": "backend m1.1 review canonical 收口与双链路 smoke",
+  "who": {"agent":"agent-b","side":"backend","branch":"feat-backend-v1","head":"9c6ed83"},
+  "what": ["移除 PUT /v1/batches/{id}/review 的 flat-field compatibility，仅接受 canonical nested row.result 并返回明确 422","新增 tests/test_api_e2e_smoke.py，覆盖 daily+office 的 upload->review->merge-source->merge 全链路并固定外部依赖","完成真实 Azure smoke：daily batch=17636c1c-7690-4703-869d-5934c7c626a8，office batch=f53d7a98-be29-46db-aa55-ba75522d7ae9，两条链路均 merged 且产物落盘","why: 收口 review contract，降低 schema drift 风险，并补齐可回归和真实环境双重验证证据"],
+  "next": {"goal":"在前端真实联调中复验 422 错误提示可用性，并清理已废弃 flat payload 文档/示例","owner":"agent-b"},
+  "dep": ["frontend: 持续提交 canonical nested payload {row_id,category,filename,result,score,preview_path?}，flat 顶层字段将稳定返回 422"],
+  "risk": ["历史未切换的前端或脚本调用会因 flat payload 被拒绝；需按 v1 canonical shape 迁移"]
+}
+```
