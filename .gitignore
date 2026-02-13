@@ -35,5 +35,4 @@ data/samples/*
 !.agents/skills/
 .agents/skills/*
 !.agents/skills/context-handoff/
-.agents/skills/context-handoff/*
-!.agents/skills/context-handoff/SKILL.md
+!.agents/skills/cross-worktree-sync/
