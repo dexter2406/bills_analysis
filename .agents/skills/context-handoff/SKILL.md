@@ -81,6 +81,17 @@ Before finalizing:
 - Ensure handoff is decision-complete for next session.
 - Ensure no sensitive secret is written into `CLAUDE.md` or `SESSION_NOTES.md`.
 
+## 6) Check if compaction is recommended
 
+After appending the handoff record, check record count:
+
+```bash
+python scripts/session_notes.py summary
+```
+
+If record count > 10, notify the user:
+> "SESSION_NOTES.md 已有 X 条记录，建议运行 /session-notes-compact 进行语义压缩。"
+
+Do NOT auto-compact — the user should decide when to trigger compaction.
 
 

@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { createRealUploadClient } from "./uploadClient.real";
+import { toErrorMessage } from "../../../lib/http";
 
 describe("uploadClient.real", () => {
   it("calls create batch endpoint with POST", async () => {
@@ -86,6 +87,36 @@ describe("uploadClient.real", () => {
         inputs: [{ path: "a.pdf", category: "bar" }],
       }),
     ).rejects.toBeTruthy();
+  });
+
+  it("keeps FastAPI detail list for readable 422 validation feedback", async () => {
+    const fetchImpl = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 422,
+      text: async () =>
+        JSON.stringify({
+          detail: [
+            {
+              type: "missing",
+              loc: ["body", "rows", 0, "result", "brutto"],
+              msg: "Field required",
+            },
+          ],
+        }),
+    });
+
+    const client = createRealUploadClient({ baseUrl: "http://127.0.0.1:8000", fetchImpl });
+
+    try {
+      await client.createBatch({
+        type: "daily",
+        run_date: "04/02/2026",
+        inputs: [{ path: "a.pdf", category: "bar" }],
+      });
+      throw new Error("Expected createBatch to throw.");
+    } catch (error) {
+      expect(toErrorMessage(error)).toContain("body.rows.0.result.brutto: Field required");
+    }
   });
 
   it("fetches review rows payload", async () => {

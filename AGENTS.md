@@ -86,7 +86,9 @@
 字段规范：
 1. 必填：`id`, `ts`, `status`, `scope`, `who`, `what`, `next`
 2. 可选：`dep`, `risk`
-3. `status` 固定为 `OPEN`（单状态）
+3. `status` 允许 `OPEN` / `CLOSED`
+   - `OPEN`：仍待跟进或存在阻塞
+   - `CLOSED`：已完成且无后续阻塞
 4. `who` 必须包含：`agent`, `side`, `branch`, `head`
 5. `what` 用数组记录变更动作，并包含必要动机（`what + why`）
 6. `dep` 仅在需要对方协作时填写
@@ -111,6 +113,14 @@ fenced JSON 示例：
   "dep": ["backend: CORS allow http://localhost:5173"],
   "risk": ["mock API only; real API not validated"],
   "next": {"goal":"switch to real API and run smoke","owner":"agent-a"}
+}
+```
+
+关闭示例（节选）：
+```json
+{
+  "id": "C-002",
+  "status": "CLOSED"
 }
 ```
 

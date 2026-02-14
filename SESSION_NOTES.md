@@ -18,7 +18,7 @@
 {
   "id": "C-002",
   "ts": "2026-02-13T22:51:45+01:00",
-  "status": "OPEN",
+  "status": "CLOSED",
   "scope": "backend m1.1 review-merge 稳定化",
   "who": {"agent":"agent-b","side":"backend","branch":"feat-backend-v1","head":"0cd9ef8"},
   "what": ["已在 PUT /v1/batches/{id}/review 增加严格 review row normalization；当 payload shape 不合法时返回 422，并保留从 flattened fields 到 nested result 的 compatibility mapping。","已将提交后的 review 结果持久化到 review_rows.json 与 review_rows_submitted.json，确保 merge 与排障读取的是最新人工编辑数据，而不是 extraction snapshot。","已通过 legacy mapper path 恢复 daily validated merge workbook 生成，重新带回 confidence highlights 与 PDF links 到 validated_for_merge 输出。","why: 日常联调中 merged output 未反映表单编辑且 validated workbook 为空；本次修复将 review submission 与 merge input contract 对齐。"],
@@ -31,6 +31,87 @@
 ```json
 {
   "id": "C-003",
+  "ts": "2026-02-13T23:27:56+01:00",
+  "status": "OPEN",
+  "scope": "frontend m1.1 real smoke + validation observability",
+  "who": {"agent":"agent-a","side":"frontend","branch":"feat-frontend-v1","head":"642ce97"},
+  "what": ["增强 toErrorMessage，支持 FastAPI 422 detail 的 string/object/list 解析，输出字段级可读错误。","新增回归测试：http/uploadClient.real/useUploadFlow/ManualReviewPage，覆盖 422 detail 列表场景与 UI 错误展示。","新增 real API smoke 脚本 pnpm smoke:real，覆盖 daily(overwrite) + office(append/overwrite) 链路并强制 canonical nested review payload。","why: 按 M1 收口要求提升联调可观测性并固化回归；确保 review 失败时前端可直接定位字段错误。"],
+  "next": {"goal":"在后端可用时重跑 real smoke，记录 daily/office 终态并清理遗留 dep/risk。","owner":"agent-a"},
+  "dep": ["backend: 需在联调环境启动 invoice-web-api 并保证 http://127.0.0.1:8000/healthz 可达，以完成 daily/office real smoke 终态验证。"],
+  "risk": ["本次 smoke 在 2026-02-13 因 healthz 不可达中断，未拿到 merged/failed 终态；需后端启动后重跑 pnpm smoke:real。"]
+}
+```
+
+```json
+{
+  "id": "C-004",
+  "ts": "2026-02-13T23:53:11+01:00",
+  "status": "OPEN",
+  "scope": "frontend real smoke failure triage",
+  "who": {"agent":"agent-a","side":"frontend","branch":"feat-frontend-v1","head":"642ce97"},
+  "what": ["修复 smoke 脚本轮询策略：新增状态停滞检测、周期日志、failed 终态快速失败，避免长时间重复 GET 造成假死观感。","定位失败根因：三条链路均在 review_ready 前进入 failed，后端返回 DI InvalidContent（占位 PDF 文件损坏/格式不支持）。","新增真实文件输入能力：支持 SMOKE_DAILY_ZBON_FILE/SMOKE_DAILY_BAR_FILE/SMOKE_OFFICE_APPEND_FILE/SMOKE_OFFICE_OVERWRITE_FILE，默认无配置时仍使用占位 PDF 并显式打印提示。","why: 联调目标是可解释失败而非盲等；当前阻塞并非前端循环，而是测试输入无效。"],
+  "next": {"goal":"接收真实样本路径后重跑 smoke，产出 daily/office(append/overwrite) 终态记录。","owner":"agent-a"},
+  "dep": ["backend: 若需通过 smoke，请提供可被 Azure DI 接受的真实 PDF 样本或测试存储路径。"],
+  "risk": ["在未提供真实 PDF 的情况下，pnpm smoke:real 将稳定失败于 InvalidContent，无法进入 review/merge 终态验证。"]
+}
+```
+
+```json
+{
+  "id": "C-005",
+  "ts": "2026-02-14T00:16:40+01:00",
+  "status": "OPEN",
+  "scope": "frontend real smoke with b-q-z samples",
+  "who": {"agent":"agent-a","side":"frontend","branch":"feat-frontend-v1","head":"642ce97"},
+  "what": ["使用真实样本完成三条链路 smoke：daily(z+b)、office-append(q)、office-overwrite(q)。","三条链路均成功到达 review_ready，并完成 canonical nested review payload 提交与 merge task 入队。","失败点统一在 merge 执行阶段，batch error 为 monthly_excel_path not found: outputs\\\\monthly\\\\current.xlsx。","why: 验证前端主调用链路与 v1 契约已可联调；当前阻塞是后端 merge 输入文件路径不存在。"],
+  "next": {"goal":"接入真实 monthly excel 路径后重跑 daily/office 三条 smoke，目标拿到 merged 终态。","owner":"agent-a"},
+  "dep": ["backend: 需要提供有效 monthly_excel_path（或在 merge-source/local 上传后返回可用路径）以完成 merge 成功验证。"],
+  "risk": ["若仍使用默认 outputs/monthly/current.xlsx，real smoke 将稳定在 merge 阶段失败。"]
+}
+```
+
+```json
+{
+  "id": "C-006",
+  "ts": "2026-02-14T00:21:56+01:00",
+  "status": "OPEN",
+  "scope": "frontend smoke re-run with project data excel",
+  "who": {"agent":"agent-a","side":"frontend","branch":"feat-frontend-v1","head":"642ce97"},
+  "what": ["smoke 脚本支持 SMOKE_MONTHLY_EXCEL_PATH，并验证 monthly 路径使用绝对路径后可被后端识别。","office append/overwrite 两条链路均完成 merged（batch: 2e293871-41ca-46ef-9bb8-856c37ccd56b / 5414652d-3718-4e55-967c-2bc4711c843e）。","daily 链路在 merge 失败，后端错误为 Datum not found in monthly Excel: 14/02/2026（batch: d3f1fb9a-489b-4ef1-bb0b-ab4bf3ae5ab2）。","why: 前端调用链路与 canonical review payload 已联通；当前唯一阻塞是 daily 数据日期与 monthly 样本不匹配。"],
+  "next": {"goal":"使用包含目标日期的数据或调整 run_date 后重跑 daily，目标拿到 merged 终态。","owner":"agent-a"},
+  "dep": ["backend/data-owner: 需提供包含 run_date=14/02/2026 的 monthly daily 基线，或允许指定与样本匹配的 run_date。"],
+  "risk": ["若 daily run_date 不在 monthly 样本中，daily merge 会稳定失败。"]
+}
+```
+
+```json
+{
+  "id": "C-007",
+  "ts": "2026-02-14T10:22:19+01:00",
+  "status": "OPEN",
+  "scope": "frontend smoke mode-specific excel routing fix",
+  "who": {"agent":"agent-a","side":"frontend","branch":"feat-frontend-v1","head":"642ce97"},
+  "what": ["修复 smoke merge 路由逻辑：daily 场景使用 daily excel，office 场景使用 monthly excel，不再共用单一路径。","新增环境变量 SMOKE_DAILY_EXCEL_PATH 与 SMOKE_OFFICE_EXCEL_PATH，并将默认值改为仓库 data 目录的绝对路径（避免后端 cwd 差异导致路径找不到）。","更新 smoke 日志，按 case 输出实际 merge_excel 路径，便于排障。","why: 用户指出 daily 与 office 是两套模式，原联调脚本将 monthly 路径错误用于 daily。"],
+  "next": {"goal":"后端恢复后重跑 b/q/z 三链路，验证 daily+office 使用分场景 excel 后的终态。","owner":"agent-a"},
+  "risk": ["本次重跑时后端 healthz 不可达（127.0.0.1:8000），未产出新的 smoke 终态。"]
+}
+```
+
+```json
+{
+  "id": "C-008",
+  "ts": "2026-02-14T10:25:32+01:00",
+  "status": "OPEN",
+  "scope": "frontend smoke final pass with split excel modes",
+  "who": {"agent":"agent-a","side":"frontend","branch":"feat-frontend-v1","head":"642ce97"},
+  "what": ["按场景分流 merge excel 后完成 real smoke 全量通过：daily 使用 data/daily_excel_sample.xlsx；office 使用 data/monthly_excel_sample.xlsx。","daily-overwrite merged（batch=6c2d4360-3982-476f-9a74-4459601e8b5f, task=12a4f1ac-8593-479f-a485-c060c8ff07f9）。","office-append merged（batch=405b732a-0cd2-4846-88c0-93210d458a50, task=984d736c-1886-45ae-8465-c916e284d59b）; office-overwrite merged（batch=36d2d42c-854e-4ec5-bd72-41d3a87e43f3, task=e7a1c23d-c840-40f0-b2d3-5ba9dc54aafa）。","why: 验证前端 v1 调用链路在 daily/office 双模式下均可闭环到 merged 终态。"],
+  "next": {"goal":"进入 M2 收口：将 smoke 命令纳入发布前 checklist，并与 backend 对齐失败重试策略。","owner":"agent-a"}
+}
+```
+
+```json
+{
+  "id": "C-009",
   "ts": "2026-02-14T00:03:27+01:00",
   "status": "OPEN",
   "scope": "backend m1.1 review canonical 收口与双链路 smoke",

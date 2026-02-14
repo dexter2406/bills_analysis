@@ -2,6 +2,7 @@ import { act, renderHook, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { createMockUploadClient } from "../api/uploadClient.mock";
 import { useUploadFlow } from "./useUploadFlow";
+import { AppHttpError } from "../../../lib/http";
 
 describe("useUploadFlow", () => {
   it("rejects non-PDF files during addFiles", () => {
@@ -159,5 +160,71 @@ describe("useUploadFlow", () => {
     expect(client.createBatchUpload).toHaveBeenCalledTimes(1);
     expect(client.createBatch).not.toHaveBeenCalled();
     expect(client.uploadFiles).not.toHaveBeenCalled();
+  });
+
+  it("exposes readable 422 validation details on review submit failure", async () => {
+    const batch = {
+      schema_version: "v1",
+      batch_id: "b-422",
+      type: "daily",
+      status: "review_ready",
+      run_date: "10/02/2026",
+      inputs: [{ path: "outputs/webapp/uploads/x/bar/01.pdf", category: "bar" }],
+      artifacts: {},
+      review_rows_count: 0,
+      merge_output: {},
+      error: null,
+      created_at: "2026-02-10T00:00:00Z",
+      updated_at: "2026-02-10T00:00:00Z",
+    };
+
+    const client = {
+      mode: "real",
+      uploadFiles: vi.fn(),
+      createBatchUpload: vi.fn(async () => ({ batch_id: "b-422" })),
+      createBatch: vi.fn(),
+      getBatch: vi.fn(async () => batch),
+      listBatches: vi.fn(async () => ({ schema_version: "v1", total: 1, items: [batch] })),
+      submitReview: vi.fn(async () => {
+        throw new AppHttpError("Request failed with status 422.", {
+          status: 422,
+          details: {
+            detail: [
+              {
+                type: "missing",
+                loc: ["body", "rows", 0, "result", "brutto"],
+                msg: "Field required",
+              },
+            ],
+          },
+        });
+      }),
+      queueMerge: vi.fn(),
+    };
+
+    const { result } = renderHook(() => useUploadFlow({ client }));
+    act(() => {
+      result.current.actions.addFiles([new File(["bar"], "bar.pdf", { type: "application/pdf" })], "bar");
+    });
+
+    await act(async () => {
+      await result.current.actions.submitBatch();
+    });
+
+    let ok;
+    await act(async () => {
+      ok = await result.current.actions.submitReviewOnly([
+        {
+          row_id: "bar:bar.pdf:0",
+          category: "bar",
+          filename: "bar.pdf",
+          result: {},
+          score: {},
+        },
+      ]);
+    });
+
+    expect(ok).toBe(false);
+    expect(result.current.state.systemError).toContain("body.rows.0.result.brutto: Field required");
   });
 });
