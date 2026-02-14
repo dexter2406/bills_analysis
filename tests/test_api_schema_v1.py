@@ -246,7 +246,7 @@ def test_review_rows_and_preview_routes() -> None:
 
 
 def test_submit_review_rejects_missing_result_shape() -> None:
-    """Review submit should return 422 when row has neither result nor mappable fields."""
+    """Review submit should return 422 when row does not provide canonical nested result."""
 
     TestClient, app = _get_test_client_and_app()
     with TestClient(app) as client:
@@ -274,10 +274,11 @@ def test_submit_review_rejects_missing_result_shape() -> None:
             },
         )
         assert review_res.status_code == 422
+        assert "canonical shape" in review_res.json()["detail"]
 
 
-def test_submit_review_flatted_fields_are_normalized_and_persisted() -> None:
-    """Flattened review fields should be normalized into result and persisted artifact."""
+def test_submit_review_flattened_fields_rejected() -> None:
+    """Flattened top-level review fields must be rejected after compatibility removal."""
 
     TestClient, app = _get_test_client_and_app()
     with TestClient(app) as client:
@@ -308,6 +309,45 @@ def test_submit_review_flatted_fields_are_normalized_and_persisted() -> None:
                 ]
             },
         )
+        assert review_res.status_code == 422
+        assert "result must be an object" in review_res.json()["detail"]
+
+
+def test_submit_review_canonical_shape_persisted_to_review_artifacts() -> None:
+    """Canonical nested review payload should persist both review artifact files."""
+
+    TestClient, app = _get_test_client_and_app()
+    with TestClient(app) as client:
+        create_res = client.post(
+            "/v1/batches",
+            json={
+                "type": "daily",
+                "run_date": "04/02/2026",
+                "inputs": [{"path": "a.pdf", "category": "bar"}],
+                "metadata": {},
+            },
+        )
+        assert create_res.status_code == 200
+        batch_id = create_res.json()["batch_id"]
+
+        review_res = client.put(
+            f"/v1/batches/{batch_id}/review",
+            json={
+                "rows": [
+                    {
+                        "row_id": "row-0001",
+                        "filename": "a.pdf",
+                        "category": "bar",
+                        "result": {
+                            "brutto": "12.30",
+                            "netto": "10.00",
+                            "store_name": "Demo",
+                        },
+                        "score": {"brutto": 0.91},
+                    }
+                ]
+            },
+        )
         assert review_res.status_code == 200
 
         rows_res = client.get(f"/v1/batches/{batch_id}/review-rows")
@@ -321,6 +361,11 @@ def test_submit_review_flatted_fields_are_normalized_and_persisted() -> None:
         assert review_file.exists()
         saved_rows = json.loads(review_file.read_text(encoding="utf-8"))
         assert saved_rows[0]["result"]["brutto"] == "12.30"
+
+        submitted_file = Path("outputs") / "webapp" / batch_id / "review_rows_submitted.json"
+        assert submitted_file.exists()
+        submitted_rows = json.loads(submitted_file.read_text(encoding="utf-8"))
+        assert submitted_rows[0]["result"]["brutto"] == "12.30"
 
 
 def test_review_rows_not_found_returns_404() -> None:
