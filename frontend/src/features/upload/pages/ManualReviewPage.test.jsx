@@ -130,4 +130,15 @@ describe("ManualReviewPage", () => {
 
     expect(screen.getByDisplayValue("local://monthly.xlsx")).toBeInTheDocument();
   });
+
+  it("renders backend validation message from systemError", () => {
+    renderPage({
+      state: {
+        ...buildBaseContext().state,
+        systemError: "body.rows.0.result.brutto: Field required",
+      },
+    });
+
+    expect(screen.getByText("body.rows.0.result.brutto: Field required")).toBeInTheDocument();
+  });
 });

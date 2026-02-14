@@ -18,6 +18,8 @@ M1 frontend for bills upload workflow. This app follows frozen `v1` backend cont
    - `pnpm dev`
 4. Run tests:
    - `pnpm test`
+5. Run real API smoke (requires backend running on `VITE_API_BASE_URL`):
+   - `pnpm smoke:real`
 
 ## Environment
 Copy `.env.example` as `.env.local` and adjust when needed:
@@ -26,6 +28,15 @@ Copy `.env.example` as `.env.local` and adjust when needed:
 - `VITE_API_BASE_URL=http://127.0.0.1:8000`
 
 Default mode is `mock`.
+
+Smoke command env overrides:
+- `VITE_API_BASE_URL` or `API_BASE_URL` (default `http://127.0.0.1:8000`)
+- `SMOKE_RUN_DATE` (`DD/MM/YYYY`, default today)
+- `SMOKE_REVIEW_TIMEOUT_MS`, `SMOKE_MERGE_TIMEOUT_MS`, `SMOKE_POLL_INTERVAL_MS`
+- `SMOKE_STUCK_STATUS_TIMEOUT_MS`, `SMOKE_STATUS_LOG_INTERVAL_MS`
+- `SMOKE_DAILY_EXCEL_PATH` (daily merge 使用的 excel 路径，默认 `data/daily_excel_sample.xlsx`)
+- `SMOKE_OFFICE_EXCEL_PATH` (office merge/append 使用的 excel 路径，默认 `data/monthly_excel_sample.xlsx`)
+- `SMOKE_DAILY_ZBON_FILE`, `SMOKE_DAILY_BAR_FILE`, `SMOKE_OFFICE_APPEND_FILE`, `SMOKE_OFFICE_OVERWRITE_FILE` (real PDF file paths)
 
 ## API Mode Strategy
 - `mock`: full frontend flow without backend upload endpoint.
