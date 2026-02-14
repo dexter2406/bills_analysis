@@ -30,7 +30,9 @@ data/samples/*
 # SKILLS
 # AI assistant configurations (symbolic links, not real content)
 .codex
-.claude
+.claude/*
+!.claude/rules
+
 .agents/*
 !.agents/skills/
 .agents/skills/*
